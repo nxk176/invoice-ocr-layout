@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/nxk176/invoice-ocr-layout/configs/schema/invoice.schema.json",
+  "title": "Vietnamese medicine VAT invoice batch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["document_type", "invoice_count", "invoices"],
+  "properties": {
+    "document_type": {"const": "VAT_INVOICE_BATCH"},
+    "invoice_count": {"type": "integer", "minimum": 0},
+    "invoices": {"type": "array", "items": {"$ref": "#/$defs/invoice"}}
+  },
+  "$defs": {
+    "nullableString": {"type": ["string", "null"]},
+    "nullableNumber": {"type": ["number", "null"]},
+    "workflowValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source"],
+      "properties": {
+        "value": {"$ref": "#/$defs/nullableString"},
+        "source": {"enum": ["invoice", "workflow_default", "not_found"]}
+      }
+    },
+    "reviewableWorkflowValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "needs_review"],
+      "properties": {
+        "value": {"$ref": "#/$defs/nullableString"},
+        "source": {"enum": ["invoice", "not_found"]},
+        "needs_review": {"type": "boolean"}
+      }
+    },
+    "deliveryUnit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "suggested_value", "source", "needs_review"],
+      "properties": {
+        "value": {"$ref": "#/$defs/nullableString"},
+        "suggested_value": {"$ref": "#/$defs/nullableString"},
+        "source": {"enum": ["invoice", "supplier_name", "not_found"]},
+        "needs_review": {"type": "boolean"}
+      }
+    },
+    "receiverName": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "candidate", "source", "needs_review"],
+      "properties": {
+        "value": {"$ref": "#/$defs/nullableString"},
+        "candidate": {"$ref": "#/$defs/nullableString"},
+        "source": {"enum": ["invoice", "buyer_signature_or_stamp", "not_found"]},
+        "needs_review": {"type": "boolean"}
+      }
+    },
+    "invoiceItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "line_number", "is_promotion", "raw_description", "medicine_name",
+        "strength", "manufacturer", "country_of_manufacture", "bid_package_name",
+        "contract_reference", "lot_number", "expiry_date", "unit", "quantity",
+        "unit_price", "line_amount", "vat_rate_percent", "vat_amount"
+      ],
+      "properties": {
+        "line_number": {"type": "integer", "minimum": 1},
+        "is_promotion": {"type": "boolean"},
+        "raw_description": {"$ref": "#/$defs/nullableString"},
+        "medicine_name": {"$ref": "#/$defs/nullableString"},
+        "strength": {"$ref": "#/$defs/nullableString"},
+        "manufacturer": {"$ref": "#/$defs/nullableString"},
+        "country_of_manufacture": {"$ref": "#/$defs/nullableString"},
+        "bid_package_name": {"$ref": "#/$defs/nullableString"},
+        "contract_reference": {"$ref": "#/$defs/nullableString"},
+        "lot_number": {"$ref": "#/$defs/nullableString"},
+        "expiry_date": {"$ref": "#/$defs/nullableString"},
+        "unit": {"$ref": "#/$defs/nullableString"},
+        "quantity": {"$ref": "#/$defs/nullableNumber"},
+        "unit_price": {"$ref": "#/$defs/nullableNumber"},
+        "line_amount": {"$ref": "#/$defs/nullableNumber"},
+        "vat_rate_percent": {"$ref": "#/$defs/nullableNumber"},
+        "vat_amount": {"$ref": "#/$defs/nullableNumber"}
+      }
+    },
+    "invoice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_number", "workflow_fields", "invoice", "supplier", "buyer",
+        "items", "totals", "validation"
+      ],
+      "properties": {
+        "page_number": {"type": "integer", "minimum": 1},
+        "workflow_fields": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "invoice_type", "bid_package", "delivery_unit", "receiver_name"],
+          "properties": {
+            "status": {"$ref": "#/$defs/workflowValue"},
+            "invoice_type": {"$ref": "#/$defs/workflowValue"},
+            "bid_package": {"$ref": "#/$defs/reviewableWorkflowValue"},
+            "delivery_unit": {"$ref": "#/$defs/deliveryUnit"},
+            "receiver_name": {"$ref": "#/$defs/receiverName"}
+          }
+        },
+        "invoice": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "invoice_number", "invoice_serial", "invoice_date", "payment_method",
+            "invoice_lookup_code", "contract_reference"
+          ],
+          "properties": {
+            "invoice_number": {"$ref": "#/$defs/nullableString"},
+            "invoice_serial": {"$ref": "#/$defs/nullableString"},
+            "invoice_date": {"$ref": "#/$defs/nullableString"},
+            "payment_method": {"$ref": "#/$defs/nullableString"},
+            "invoice_lookup_code": {"$ref": "#/$defs/nullableString"},
+            "contract_reference": {"$ref": "#/$defs/nullableString"}
+          }
+        },
+        "supplier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supplier_name", "tax_code", "address", "phone"],
+          "properties": {
+            "supplier_name": {"$ref": "#/$defs/nullableString"},
+            "tax_code": {"$ref": "#/$defs/nullableString"},
+            "address": {"$ref": "#/$defs/nullableString"},
+            "phone": {"$ref": "#/$defs/nullableString"}
+          }
+        },
+        "buyer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "buyer_contact", "buyer_organization", "tax_code",
+            "budgetary_unit_code", "address"
+          ],
+          "properties": {
+            "buyer_contact": {"$ref": "#/$defs/nullableString"},
+            "buyer_organization": {"$ref": "#/$defs/nullableString"},
+            "tax_code": {"$ref": "#/$defs/nullableString"},
+            "budgetary_unit_code": {"$ref": "#/$defs/nullableString"},
+            "address": {"$ref": "#/$defs/nullableString"}
+          }
+        },
+        "items": {"type": "array", "items": {"$ref": "#/$defs/invoiceItem"}},
+        "totals": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subtotal_excluding_vat", "vat_rate_percent", "vat_total",
+            "grand_total", "amount_in_words"
+          ],
+          "properties": {
+            "subtotal_excluding_vat": {"$ref": "#/$defs/nullableNumber"},
+            "vat_rate_percent": {"$ref": "#/$defs/nullableNumber"},
+            "vat_total": {"$ref": "#/$defs/nullableNumber"},
+            "grand_total": {"$ref": "#/$defs/nullableNumber"},
+            "amount_in_words": {"$ref": "#/$defs/nullableString"}
+          }
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subtotal_plus_vat_equals_grand_total", "sum_of_items_equals_subtotal",
+            "rounding_difference_detected", "item_count", "unresolved_required_fields"
+          ],
+          "properties": {
+            "subtotal_plus_vat_equals_grand_total": {"type": ["boolean", "null"]},
+            "sum_of_items_equals_subtotal": {"type": ["boolean", "null"]},
+            "rounding_difference_detected": {"type": "boolean"},
+            "item_count": {"type": "integer", "minimum": 0},
+            "unresolved_required_fields": {
+              "type": "array",
+              "items": {"type": "string"},
+              "uniqueItems": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

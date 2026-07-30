@@ -1,0 +1,53 @@
+# Private inputs and generated artifacts
+data/*
+!data/README.md
+GT/*
+!GT/README.md
+models/*
+!models/README.md
+work/*
+outputs/*
+!outputs/README.md
+
+# Secrets and local environments
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+
+# Documents, rendered pages, crops, and model weights
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.pth
+*.pt
+*.bin
+*.onnx
+*.pdparams
+*.pdopt
+*.safetensors
+*.ckpt
+
+# Python/tool caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

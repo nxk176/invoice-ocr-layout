@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.25,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "invoice-ocr-layout"
+version = "0.1.0"
+description = "Composable OCR/KIE framework for Vietnamese hospital medicine invoices"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = { text = "Apache-2.0" }
+authors = [{ name = "invoice-ocr-layout contributors" }]
+dependencies = [
+  "jsonschema>=4.23,<5",
+  "Pillow>=10.4,<12",
+  "psutil>=6.0,<8",
+  "pydantic>=2.8,<3",
+  "PyYAML>=6.0.2,<7",
+]
+
+[project.optional-dependencies]
+pdf = ["pypdfium2>=4.30,<5"]
+preprocessing = [
+  "numpy>=1.26,<3",
+  "opencv-python-headless>=4.10,<5",
+]
+paddleocr = ["paddleocr==2.9.1"]
+vietocr = ["vietocr==0.3.13"]
+layoutlmv3 = [
+  "torch>=2.2,<3",
+  "transformers==4.44.2",
+]
+dev = [
+  "mypy>=1.11,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=5,<7",
+  "ruff>=0.6,<1",
+  "types-PyYAML>=6.0.12.20240808",
+]
+
+[project.scripts]
+invoice-ocr = "invoice_ocr.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/invoice_ocr"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+packages = ["invoice_ocr"]
+exclude = ["tests/"]
+

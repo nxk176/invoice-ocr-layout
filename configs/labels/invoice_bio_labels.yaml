@@ -1,0 +1,46 @@
+scheme: BIO
+labels:
+  - O
+  - SUPPLIER_NAME
+  - SELLER_TAX_CODE
+  - SELLER_ADDRESS
+  - SELLER_PHONE
+  - BUYER_CONTACT
+  - BUYER_ORGANIZATION
+  - BUYER_TAX_CODE
+  - BUYER_BUDGETARY_UNIT_CODE
+  - BUYER_ADDRESS
+  - INVOICE_NUMBER
+  - INVOICE_SERIAL
+  - INVOICE_DATE
+  - PAYMENT_METHOD
+  - INVOICE_LOOKUP_CODE
+  - CONTRACT_REFERENCE
+  - BID_PACKAGE
+  - DELIVERY_UNIT
+  - RECEIVER_NAME
+  - RAW_DESCRIPTION
+  - MEDICINE_NAME
+  - STRENGTH
+  - MANUFACTURER
+  - COUNTRY_OF_MANUFACTURE
+  - LOT_NUMBER
+  - EXPIRY_DATE
+  - UNIT
+  - QUANTITY
+  - UNIT_PRICE
+  - LINE_AMOUNT
+  - VAT_RATE
+  - VAT_AMOUNT
+  - SUBTOTAL
+  - VAT_TOTAL
+  - GRAND_TOTAL
+  - AMOUNT_IN_WORDS
+encoding:
+  outside: O
+  entity_prefixes: [B, I]
+notes:
+  - Every non-O semantic label expands to B-<LABEL> and I-<LABEL>.
+  - Table row and cell membership is stored separately in GT/tables.
+  - Token boxes use the integer 0..1000 LayoutLM coordinate space.
+

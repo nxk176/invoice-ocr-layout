@@ -1,0 +1,10 @@
+status: null
+invoice_type: null
+validation_tolerance: "1"
+required_fields:
+  - invoice.invoice_number
+  - invoice.invoice_date
+  - supplier.supplier_name
+  - buyer.buyer_organization
+  - totals.grand_total
+

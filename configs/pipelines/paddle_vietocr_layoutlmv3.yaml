@@ -1,0 +1,10 @@
+detector: paddleocr
+recognizer: vietocr
+layout: layoutlmv3
+device: auto
+batch_size: 1
+num_workers: 0
+model_root: models
+work_root: work
+workflow_defaults: configs/workflow_defaults/default.yaml
+
