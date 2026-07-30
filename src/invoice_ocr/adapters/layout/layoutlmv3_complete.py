@@ -20,6 +20,22 @@ from invoice_ocr.exceptions import CheckpointUnavailableError, DependencyUnavail
 class LayoutLMv3Adapter(LayoutAdapter):
     name = "layoutlmv3"
 
+    def resolve_checkpoint(self) -> Any:
+        candidates = [
+            self.checkpoint,
+            self.model_root / "layoutlmv3" / "invoice-best",
+            self.model_root.parent / "outputs" / "training" / "layout-layoutlmv3" / "invoice-best",
+        ]
+        for candidate in candidates:
+            if candidate is not None and candidate.is_dir():
+                return candidate
+        expected = ", ".join(str(path) for path in candidates if path is not None)
+        raise CheckpointUnavailableError(
+            "fine-tuned LayoutLMv3 checkpoint not found. Checked: "
+            f"{expected}. A base checkpoint does not know invoice labels; run layout "
+            "training first or place invoice-best under models/layoutlmv3."
+        )
+
     def _load(self) -> tuple[Any, Any, Any]:
         try:
             import torch
@@ -29,12 +45,7 @@ class LayoutLMv3Adapter(LayoutAdapter):
                 "LayoutLMv3 requires torch and transformers. Install the layoutlmv3 extra "
                 "with a PyTorch build compatible with the selected CPU/CUDA runtime."
             ) from exc
-        checkpoint = self.checkpoint or self.model_root / "layoutlmv3" / "invoice-best"
-        if not checkpoint.is_dir():
-            raise CheckpointUnavailableError(
-                f"fine-tuned LayoutLMv3 checkpoint not found at {checkpoint}. A base "
-                "checkpoint does not know invoice labels; run layout training first."
-            )
+        checkpoint = self.resolve_checkpoint()
         processor = AutoProcessor.from_pretrained(checkpoint, apply_ocr=False)
         model = AutoModelForTokenClassification.from_pretrained(checkpoint)
         model.to("cuda" if self.device == "cuda" else "cpu")
