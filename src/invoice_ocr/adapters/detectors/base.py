@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from invoice_ocr.contracts import DetectionRegion, DocumentPage
+from invoice_ocr.model_manifest import adapter_revision
 
 
 class DetectorAdapter(ABC):
@@ -23,7 +24,11 @@ class DetectorAdapter(ABC):
         self.model_root = model_root
         self.device = device
         self.checkpoint = checkpoint
-        self.revision = revision
+        try:
+            manifest_revision = adapter_revision("detector", self.name)
+        except KeyError:
+            manifest_revision = None
+        self.revision = revision or manifest_revision
 
     @abstractmethod
     def detect(self, page: DocumentPage) -> list[DetectionRegion]:

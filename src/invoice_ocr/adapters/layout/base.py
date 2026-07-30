@@ -11,6 +11,7 @@ from invoice_ocr.contracts import (
     RecognizedRegion,
     Relation,
 )
+from invoice_ocr.model_manifest import adapter_revision
 
 
 class LayoutAdapter(ABC):
@@ -28,7 +29,11 @@ class LayoutAdapter(ABC):
         self.model_root = model_root
         self.device = device
         self.checkpoint = checkpoint
-        self.revision = revision
+        try:
+            manifest_revision = adapter_revision("layout", self.name)
+        except KeyError:
+            manifest_revision = None
+        self.revision = revision or manifest_revision
 
     @abstractmethod
     def extract(
