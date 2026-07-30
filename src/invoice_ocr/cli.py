@@ -9,6 +9,7 @@ from pathlib import Path
 
 from invoice_ocr.evaluation.benchmark import benchmark_rows, write_benchmark_reports
 from invoice_ocr.exceptions import InvoiceOCRError
+from invoice_ocr.io.paths import ensure_runtime_directories
 from invoice_ocr.logging_utils import configure_logging
 from invoice_ocr.pipeline import (
     DETECTOR_NAMES,
@@ -540,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        ensure_runtime_directories(Path.cwd())
         return dispatch(args)
     except (InvoiceOCRError, FileNotFoundError, ValueError) as exc:
         configure_logging().error("%s", exc)

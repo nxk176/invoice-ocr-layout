@@ -43,6 +43,15 @@ if ! command -v python >/dev/null 2>&1; then
   exit 2
 fi
 
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p \
+  "$project_root/data" \
+  "$project_root/GT" \
+  "$project_root/models" \
+  "$project_root/work" \
+  "$project_root/outputs" \
+  "$project_root/external"
+
 python -m invoice_ocr.cli experiment "$@"
 status=$?
 if [[ $status -ne 0 ]]; then

@@ -21,6 +21,12 @@ Options:
     exit 0
 }
 
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$runtimeDirectories = @("data", "GT", "models", "work", "outputs", "external")
+foreach ($directory in $runtimeDirectories) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $projectRoot $directory) | Out-Null
+}
+
 $extras = @()
 if ($WithPdf) { $extras += "pdf" }
 if ($WithPreprocessing) { $extras += "preprocessing" }

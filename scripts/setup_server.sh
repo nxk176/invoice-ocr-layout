@@ -32,6 +32,15 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p \
+  "$project_root/data" \
+  "$project_root/GT" \
+  "$project_root/models" \
+  "$project_root/work" \
+  "$project_root/outputs" \
+  "$project_root/external"
+
 command -v python >/dev/null 2>&1 || {
   echo "Python is not available in the current environment." >&2
   exit 2

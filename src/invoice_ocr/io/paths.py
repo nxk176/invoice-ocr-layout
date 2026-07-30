@@ -10,6 +10,15 @@ from invoice_ocr.exceptions import NoInputDocumentsError
 
 SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 SUPPORTED_SUFFIXES = SUPPORTED_IMAGE_SUFFIXES | {".pdf"}
+RUNTIME_DIRECTORY_NAMES = ("data", "GT", "models", "work", "outputs", "external")
+
+
+def ensure_runtime_directories(root: Path) -> tuple[Path, ...]:
+    """Create private runtime directories without requiring tracked placeholders."""
+    paths = tuple(root / name for name in RUNTIME_DIRECTORY_NAMES)
+    for path in paths:
+        path.mkdir(parents=True, exist_ok=True)
+    return paths
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
@@ -31,7 +40,7 @@ def discover_documents(input_path: Path) -> list[SourceDocument]:
     """Discover supported files without following hidden generated directories."""
     input_path = input_path.expanduser().resolve()
     if not input_path.exists():
-        raise NoInputDocumentsError(f"input path does not exist: {input_path}")
+        raise NoInputDocumentsError(f"no input documents found in {input_path}")
     candidates = (
         [input_path]
         if input_path.is_file()

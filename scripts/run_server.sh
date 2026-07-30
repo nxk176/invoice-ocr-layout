@@ -32,6 +32,14 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mkdir -p \
+  "$project_root/data" \
+  "$project_root/GT" \
+  "$project_root/models" \
+  "$project_root/work" \
+  "$project_root/outputs" \
+  "$project_root/external"
 if [[ -n "$gt_dir" ]]; then
   python -m invoice_ocr.cli validate-gt --gt "$gt_dir"
 fi

@@ -1,18 +1,14 @@
 # Private inputs and generated artifacts
-data/*
-!data/README.md
-GT/*
-!GT/README.md
-models/*
-!models/README.md
-work/*
-outputs/*
-!outputs/README.md
+data/
+GT/
+models/
+work/
+outputs/
+external/
 
 # Secrets and local environments
 .env
 .env.*
-!.env.example
 .venv/
 venv/
 

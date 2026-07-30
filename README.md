@@ -112,6 +112,10 @@ bash scripts/benchmark_server.sh --help
 
 ## 4. Dữ liệu đầu vào
 
+GitHub chỉ chứa code. Data, GT, model weights, intermediate files và outputs không được
+version-control. Setup và runtime commands tự tạo các thư mục private khi cần. Xem chi tiết
+contract và đường dẫn local/server tại [docs/data_layout.md](docs/data_layout.md).
+
 Mặc định:
 
 ```text
@@ -407,8 +411,9 @@ Tuyệt đối không push:
 - `.pth`, `.pt`, `.bin`, `.onnx`, `.pdparams`, `.safetensors` hay checkpoint khác;
 - cache Python/tool.
 
-`.gitignore` chặn nội dung `data/`, `GT/`, `models/`, `work/`, `outputs/` và chỉ cho phép
-README hướng dẫn ở bốn folder public.
+`.gitignore` ignore hoàn toàn `data/`, `GT/`, `models/`, `work/`, `outputs/` và `external/`.
+Hướng dẫn bố trí dữ liệu được version-control duy nhất tại
+[docs/data_layout.md](docs/data_layout.md); không dùng placeholder để giữ runtime directory.
 
 ## 15. Third-party và giới hạn
 

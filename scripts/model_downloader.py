@@ -151,6 +151,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = build_parser().parse_args(argv)
+    args.model_root.mkdir(parents=True, exist_ok=True)
     names = sorted(path.stem for path in MANIFEST_ROOT.glob("*.yaml")) if args.all else [args.model]
     try:
         for name in names:
