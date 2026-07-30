@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from invoice_ocr.evaluation.aggregate import evaluate_run
 from invoice_ocr.pipeline import PipelineSelection, enumerate_pipeline_combinations
 from invoice_ocr.training.datasets import validate_ground_truth
 
@@ -51,6 +52,9 @@ def write_benchmark_reports(
     gt_root: Path,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    for row in rows:
+        run_name = f"{row['detector']}__{row['recognizer']}__{row['layout']}"
+        row.update(evaluate_run(output_dir / run_name, gt_root))
     availability = stage_metric_availability(gt_root)
     metrics = {
         "pipeline_count": len(rows),
