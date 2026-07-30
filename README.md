@@ -424,3 +424,187 @@ Giới hạn hiện tại:
 - Tái tạo row hình học cần được benchmark và điều chỉnh tolerance bằng GT tables thật.
 - License LayoutLMv3/VI-LayoutXLM có điều kiện phi thương mại; cần legal review trước deploy.
 
+## 16. Đánh giá pretrained và sau fine-tuning
+
+Protocol `pretrained-vs-finetuned` trả lời một câu hỏi có kiểm soát: chất lượng và chi phí
+inference thay đổi thế nào khi model được fine-tune trên hóa đơn thuốc. Pretrained baseline
+của detector/recognizer là official checkpoint chạy trực tiếp trên test set khóa, không cập
+nhật weight bằng dữ liệu invoice. Sau đó model được khởi tạo lại từ đúng pretrained checkpoint,
+chỉ học trên train, chọn best checkpoint bằng validation, rồi chạy lại trên đúng test IDs.
+
+LayoutLMv3 và VI-LayoutXLM base chỉ là encoder pretrained; chúng chưa biết invoice labels và
+không trực tiếp sinh canonical invoice JSON. Framework không báo cáo encoder kèm random task
+head như pretrained invoice extractor. So sánh chính là:
+
+- `linear_probe`: khóa toàn bộ encoder, chỉ học invoice token-classification head trên train;
+- `full_finetune`: học task head và cho phép encoder nhận gradient;
+- `generic_kie_checkpoint`: chỉ dùng khi manifest chỉ ra checkpoint chính thức, revision,
+  license và label space tương thích. Nếu không tương thích, kết quả là N/A, không ánh xạ tùy ý.
+
+### 16.1 Tạo locked split
+
+Đặt data và annotation thật vào các thư mục ignored trước, rồi tạo đúng một manifest version:
+
+```bash
+python -m invoice_ocr.cli create-split \
+  --data data \
+  --gt GT \
+  --output GT/splits/split_v1.json \
+  --seed 42
+```
+
+Manifest chứa `train_document_ids`, `validation_document_ids`, `test_document_ids`, seed,
+data/GT hashes, grouping rules, creation time và self-hash. Mọi page của một source document
+luôn ở cùng partition. Nếu data hoặc GT thay đổi, lệnh experiment từ chối dùng manifest cũ;
+hãy tạo split version mới thay vì âm thầm thay test set.
+
+Test IDs không được truyền vào training backend, early stopping, checkpoint selection hay
+threshold tuning. Best checkpoint candidate bắt buộc ghi `evaluated_split=validation`; selector
+từ chối candidate lấy từ train hoặc test. Hai evaluation giữ cùng preprocessing, decoding,
+post-processing, schema, workflow defaults, tolerance, batch/workers và metric implementation.
+
+### 16.2 Baseline, fine-tune và đánh giá lại
+
+Ví dụ recognizer VietOCR:
+
+```bash
+python -m invoice_ocr.cli evaluate-model \
+  --stage recognizer \
+  --model vietocr \
+  --checkpoint-source pretrained \
+  --data data \
+  --gt GT \
+  --split-manifest GT/splits/split_v1.json \
+  --split test \
+  --output outputs/baselines/vietocr_pretrained
+
+python -m invoice_ocr.cli train \
+  --stage recognizer \
+  --model vietocr \
+  --checkpoint-source pretrained \
+  --data data \
+  --gt GT \
+  --split-manifest GT/splits/split_v1.json \
+  --output models/finetuned/vietocr_invoice
+
+python -m invoice_ocr.cli evaluate-model \
+  --stage recognizer \
+  --model vietocr \
+  --checkpoint models/finetuned/vietocr_invoice/best \
+  --checkpoint-source finetuned \
+  --data data \
+  --gt GT \
+  --split-manifest GT/splits/split_v1.json \
+  --split test \
+  --output outputs/finetuned/vietocr_invoice
+
+python -m invoice_ocr.cli compare-runs \
+  --before outputs/baselines/vietocr_pretrained \
+  --after outputs/finetuned/vietocr_invoice \
+  --output outputs/comparisons/vietocr
+```
+
+Detector dùng quy trình tương tự. Layout full fine-tune:
+
+```bash
+python -m invoice_ocr.cli train \
+  --stage layout \
+  --model layoutlmv3 \
+  --layout-training-mode full_finetune \
+  --checkpoint-source pretrained \
+  --data data \
+  --gt GT \
+  --split-manifest GT/splits/split_v1.json \
+  --output models/finetuned/layoutlmv3_invoice
+```
+
+### 16.3 Chạy trọn protocol
+
+Một pipeline, theo đúng thứ tự detector → recognizer → layout:
+
+```bash
+python -m invoice_ocr.cli experiment \
+  --pipeline paddleocr vietocr layoutlmv3 \
+  --protocol pretrained-vs-finetuned \
+  --layout-baseline-mode linear_probe \
+  --layout-finetuned-mode full_finetune \
+  --data data \
+  --gt GT \
+  --split-manifest GT/splits/split_v1.json \
+  --output outputs/experiments/paddle_vietocr_layoutlmv3 \
+  --resume
+```
+
+Toàn bộ 12 tổ hợp:
+
+```bash
+python -m invoice_ocr.cli experiment \
+  --all-combinations \
+  --protocol pretrained-vs-finetuned \
+  --layout-baseline-mode linear_probe \
+  --layout-finetuned-mode full_finetune \
+  --data data \
+  --gt GT \
+  --split-manifest GT/splits/split_v1.json \
+  --output outputs/experiments/all_combinations \
+  --resume
+```
+
+`--resume` bỏ qua stage có manifest `success` và artifact hợp lệ; `--force` mới cho phép chạy
+lại. Một model thiếu dependency/checkpoint/annotation được ghi `SKIPPED` kèm reason và không
+làm dừng model khác. Không backend production nào tự chuyển sang mock.
+
+### 16.4 Annotation bắt buộc
+
+- Detector fine-tune/evaluate cần page/image reference và text polygon hoặc bounding box tại
+  `GT/detection/<document_id>.json`.
+- Recognizer cần crop, hoặc source page + crop box, và exact transcription tại
+  `GT/recognition/<document_id>.json`.
+- Layout cần OCR tokens/words, boxes, BIO entity labels và relation/table annotation khi metric
+  tương ứng được yêu cầu tại `GT/layout/<document_id>.json`.
+- End-to-end canonical metrics cần `GT/final/<relative_path>.json`.
+
+Thiếu annotation làm stage training `SKIPPED` và metric tương ứng N/A có reason; final JSON
+không được tự chuyển thành stage annotation.
+
+### 16.5 Đọc artifact và comparison
+
+Mỗi experiment có `pretrained/`, `training/`, `finetuned/` và `comparison/`. Training timing
+được lưu riêng và không cộng vào inference timing. `timing.json` của mỗi evaluation ghi model
+load, preprocessing, stage inference, reconstruction/post-processing/validation/evaluation,
+wall time, throughput, document/page counts, CPU RAM và GPU memory. Resource không đo được là
+`null` kèm reason. CUDA timing gọi synchronize trước/sau vùng đo; warm-up iterations không tính
+vào inference chính.
+
+Mỗi aggregate metric có value, numerator, denominator, evaluated/skipped counts, hướng
+`lower_is_better` và N/A reason. Trong `comparison.json`, `metrics_before`/`metrics_after` là
+chất lượng test; `runtime_before`/`runtime_after` là runtime/resource. CER, WER, latency và
+memory thấp hơn là tốt hơn; precision/recall/F1/exact/accuracy/throughput cao hơn là tốt hơn.
+`per_document.csv`, `per_field.csv`, `timing_comparison.csv` và `summary.md` giải thích phần
+cải thiện/giảm. Không có test GT hợp lệ thì summary không kết luận fine-tuning tốt hơn.
+
+Comparison mặc định từ chối khác split hash, test IDs hoặc schema version. Khác batch size,
+device/hardware/config vẫn được ghi rõ là fairness difference. Chỉ dùng
+`--allow-incomparable-runs` cho diagnostic được đánh dấu không công bằng.
+
+### 16.6 Lệnh chính xác trên server
+
+```bash
+cd /mnt/disk4/khainx/invoice-ocr-layout
+conda activate nxk
+git pull
+
+bash scripts/setup_server.sh
+
+bash scripts/run_experiment_server.sh \
+  --pipeline paddleocr vietocr layoutlmv3 \
+  --protocol pretrained-vs-finetuned \
+  --data /mnt/disk4/khainx/invoice-ocr-layout/data \
+  --gt /mnt/disk4/khainx/invoice-ocr-layout/GT \
+  --output /mnt/disk4/khainx/invoice-ocr-layout/outputs/experiments/run_001
+```
+
+Script dùng conda environment đang active, tự dùng/tạo mặc định
+`GT/splits/split_v1.json`, hỗ trợ `--resume`/`--force`, và trả non-zero nếu toàn bộ experiment
+đều thất bại hoặc bị skip. Dùng `--all-combinations` thay `--pipeline A B C` để chạy đủ 12 tổ
+hợp. Server không cần và không được giả định có Codex.

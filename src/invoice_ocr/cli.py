@@ -1,4 +1,4 @@
-"""Command-line interface for training, inference, and benchmarking."""
+"""Command-line interface for training, inference, benchmarking, and experiments."""
 
 from __future__ import annotations
 
@@ -63,6 +63,34 @@ def add_pipeline_selection(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_locked_training_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--checkpoint-source",
+        choices=("pretrained",),
+        default="pretrained",
+    )
+    parser.add_argument("--split-manifest", type=Path)
+    parser.add_argument(
+        "--layout-training-mode",
+        choices=("linear_probe", "full_finetune"),
+        default="full_finetune",
+    )
+    parser.add_argument("--selection-metric")
+    parser.add_argument(
+        "--maximize-metric",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
+    parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--learning-rate", type=float, default=5e-5)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    parser.add_argument(
+        "--mixed-precision-mode",
+        choices=("none", "fp16", "bf16"),
+        default="none",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m invoice_ocr.cli",
@@ -115,6 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     train = subparsers.add_parser("train", help="fine-tune one pipeline stage")
     add_common_options(train)
+    add_locked_training_options(train)
     train.add_argument("--stage", choices=("detector", "recognizer", "layout"), required=True)
     train.add_argument("--model", required=True)
     train.add_argument("--data", type=Path, required=True)
@@ -141,6 +170,93 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(validate_gt)
     validate_gt.add_argument("--gt", type=Path, required=True)
     validate_gt.add_argument("--output", type=Path)
+
+    create_split = subparsers.add_parser(
+        "create-split",
+        help="create an immutable deterministic train/validation/test split",
+    )
+    add_common_options(create_split)
+    create_split.add_argument("--data", type=Path, required=True)
+    create_split.add_argument("--gt", type=Path, required=True)
+    create_split.add_argument("--output", type=Path, required=True)
+
+    evaluate_model_parser = subparsers.add_parser(
+        "evaluate-model",
+        help="evaluate one pretrained or fine-tuned model on a locked split",
+    )
+    add_common_options(evaluate_model_parser)
+    evaluate_model_parser.add_argument(
+        "--stage", choices=("detector", "recognizer", "layout"), required=True
+    )
+    evaluate_model_parser.add_argument("--model", required=True)
+    evaluate_model_parser.add_argument(
+        "--checkpoint-source",
+        choices=("pretrained", "linear_probe", "finetuned", "generic_kie_checkpoint"),
+        default="pretrained",
+    )
+    evaluate_model_parser.add_argument("--checkpoint", type=Path)
+    evaluate_model_parser.add_argument("--data", type=Path, required=True)
+    evaluate_model_parser.add_argument("--gt", type=Path, required=True)
+    evaluate_model_parser.add_argument("--split-manifest", type=Path, required=True)
+    evaluate_model_parser.add_argument(
+        "--split",
+        choices=("train", "validation", "test"),
+        default="test",
+    )
+    evaluate_model_parser.add_argument("--output", type=Path, required=True)
+    evaluate_model_parser.add_argument(
+        "--layout-training-mode",
+        choices=("linear_probe", "full_finetune", "generic_kie_checkpoint"),
+    )
+    evaluate_model_parser.add_argument("--warmup-iterations", type=int, default=0)
+    evaluate_model_parser.add_argument("--validation-tolerance", default="0.01")
+
+    compare = subparsers.add_parser(
+        "compare-runs",
+        help="compare locked pretrained and fine-tuned evaluation artifacts",
+    )
+    add_common_options(compare)
+    compare.add_argument("--before", type=Path, required=True)
+    compare.add_argument("--after", type=Path, required=True)
+    compare.add_argument("--output", type=Path, required=True)
+    compare.add_argument("--allow-incomparable-runs", action="store_true")
+
+    experiment = subparsers.add_parser(
+        "experiment",
+        help="run the locked pretrained-versus-fine-tuned protocol",
+    )
+    add_common_options(experiment)
+    add_pipeline_selection(experiment)
+    experiment.add_argument("--all-combinations", action="store_true")
+    experiment.add_argument(
+        "--protocol",
+        choices=("pretrained-vs-finetuned",),
+        default="pretrained-vs-finetuned",
+    )
+    experiment.add_argument(
+        "--layout-baseline-mode",
+        choices=("linear_probe", "generic_kie_checkpoint"),
+        default="linear_probe",
+    )
+    experiment.add_argument(
+        "--layout-finetuned-mode",
+        choices=("full_finetune",),
+        default="full_finetune",
+    )
+    experiment.add_argument("--data", type=Path, required=True)
+    experiment.add_argument("--gt", type=Path, required=True)
+    experiment.add_argument("--split-manifest", type=Path)
+    experiment.add_argument("--output", type=Path, required=True)
+    experiment.add_argument("--warmup-iterations", type=int, default=0)
+    experiment.add_argument("--epochs", type=int, default=3)
+    experiment.add_argument("--learning-rate", type=float, default=5e-5)
+    experiment.add_argument("--gradient-accumulation-steps", type=int, default=1)
+    experiment.add_argument(
+        "--mixed-precision-mode",
+        choices=("none", "fp16", "bf16"),
+        default="none",
+    )
+    experiment.add_argument("--validation-tolerance", default="0.01")
     return parser
 
 
@@ -218,7 +334,90 @@ def _run_benchmark(args: argparse.Namespace) -> None:
     write_benchmark_reports(args.output, rows, args.gt)
 
 
-def dispatch(args: argparse.Namespace) -> None:
+def _dispatch_locked_training(args: argparse.Namespace) -> None:
+    from invoice_ocr.experiments.train_model import (
+        LockedTrainingRequest,
+        train_model_locked,
+    )
+
+    train_model_locked(
+        LockedTrainingRequest(
+            stage=args.stage,
+            model=args.model,
+            checkpoint_source=args.checkpoint_source,
+            data_root=args.data,
+            gt_root=args.gt,
+            split_manifest=args.split_manifest,
+            output_dir=args.output,
+            model_root=args.model_root,
+            device=args.device,
+            seed=args.seed,
+            resume=args.resume,
+            force=args.force,
+            layout_training_mode=args.layout_training_mode,
+            selection_metric=args.selection_metric,
+            maximize_metric=args.maximize_metric,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            batch_size=args.batch_size,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            mixed_precision_mode=args.mixed_precision_mode,
+            num_workers=args.num_workers,
+        )
+    )
+
+
+def _dispatch_experiment(args: argparse.Namespace) -> int:
+    from invoice_ocr.experiments.orchestrator import (
+        ExperimentRequest,
+        run_experiment,
+    )
+    from invoice_ocr.experiments.split import create_locked_split
+
+    if args.all_combinations and (
+        args.pipeline is not None
+        or args.detector is not None
+        or args.recognizer is not None
+        or args.layout is not None
+    ):
+        raise InvoiceOCRError("use either --all-combinations or one pipeline selection, not both")
+    pipeline = None if args.all_combinations else selection_from_args(args)
+    split_manifest = args.split_manifest or args.gt / "splits" / "split_v1.json"
+    if not split_manifest.is_file():
+        create_locked_split(args.data, args.gt, split_manifest, args.seed, args.force)
+    outcome = run_experiment(
+        ExperimentRequest(
+            output_dir=args.output,
+            data_root=args.data,
+            gt_root=args.gt,
+            split_manifest=split_manifest,
+            pipeline=pipeline,
+            all_combinations=args.all_combinations,
+            protocol=args.protocol,
+            layout_baseline_mode=args.layout_baseline_mode,
+            layout_finetuned_mode=args.layout_finetuned_mode,
+            model_root=args.model_root,
+            work_root=args.work_root,
+            workflow_defaults=args.workflow_defaults,
+            device=args.device,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            warmup_iterations=args.warmup_iterations,
+            seed=args.seed,
+            resume=args.resume,
+            force=args.force,
+            fail_fast=args.fail_fast,
+            epochs=args.epochs,
+            learning_rate=args.learning_rate,
+            gradient_accumulation_steps=args.gradient_accumulation_steps,
+            mixed_precision_mode=args.mixed_precision_mode,
+            validation_tolerance=args.validation_tolerance,
+        )
+    )
+    return 1 if outcome.all_failed else 0
+
+
+def dispatch(args: argparse.Namespace) -> int:
     if args.command == "run":
         logger = configure_logging(args.output / "logs" / "run.log")
         PipelineRunner(selection_from_args(args), options_from_args(args), logger=logger).run()
@@ -243,21 +442,80 @@ def dispatch(args: argparse.Namespace) -> None:
         print(text)
         if not report.is_valid:
             raise InvoiceOCRError("ground-truth validation failed")
-    elif args.command == "train":
-        run_training(
-            TrainingRequest(
+    elif args.command == "create-split":
+        from invoice_ocr.experiments.split import create_locked_split
+
+        manifest = create_locked_split(args.data, args.gt, args.output, args.seed, args.force)
+        print(json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2))
+    elif args.command == "evaluate-model":
+        from invoice_ocr.experiments.evaluate_model import (
+            ModelEvaluationRequest,
+            evaluate_model,
+        )
+
+        evaluate_model(
+            ModelEvaluationRequest(
                 stage=args.stage,
                 model=args.model,
+                checkpoint_source=args.checkpoint_source,
+                checkpoint=args.checkpoint,
                 data_root=args.data,
                 gt_root=args.gt,
+                split_manifest=args.split_manifest,
+                split=args.split,
+                output_dir=args.output,
                 model_root=args.model_root,
-                output_root=args.output,
+                work_root=args.work_root,
+                workflow_defaults=args.workflow_defaults,
                 device=args.device,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                warmup_iterations=args.warmup_iterations,
                 seed=args.seed,
                 resume=args.resume,
                 force=args.force,
+                baseline_mode=(
+                    args.layout_training_mode
+                    if args.stage == "layout" and args.checkpoint_source != "finetuned"
+                    else None
+                ),
+                finetuned_mode=(
+                    args.layout_training_mode
+                    if args.stage == "layout" and args.checkpoint_source == "finetuned"
+                    else None
+                ),
+                validation_tolerance=args.validation_tolerance,
             )
         )
+    elif args.command == "compare-runs":
+        from invoice_ocr.experiments.comparison import compare_runs
+
+        compare_runs(
+            args.before,
+            args.after,
+            args.output,
+            allow_incomparable_runs=args.allow_incomparable_runs,
+        )
+    elif args.command == "experiment":
+        return _dispatch_experiment(args)
+    elif args.command == "train":
+        if args.split_manifest is not None:
+            _dispatch_locked_training(args)
+        else:
+            run_training(
+                TrainingRequest(
+                    stage=args.stage,
+                    model=args.model,
+                    data_root=args.data,
+                    gt_root=args.gt,
+                    model_root=args.model_root,
+                    output_root=args.output,
+                    device=args.device,
+                    seed=args.seed,
+                    resume=args.resume,
+                    force=args.force,
+                )
+            )
     elif args.command == "train-pipeline":
         detector, recognizer, layout = args.pipeline
         run_pipeline_training(
@@ -275,14 +533,14 @@ def dispatch(args: argparse.Namespace) -> None:
         )
     else:
         raise InvoiceOCRError(f"unhandled command: {args.command}")
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        dispatch(args)
-        return 0
+        return dispatch(args)
     except (InvoiceOCRError, FileNotFoundError, ValueError) as exc:
         configure_logging().error("%s", exc)
         return 2

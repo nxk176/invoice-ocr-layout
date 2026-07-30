@@ -17,6 +17,7 @@ test:
 
 smoke:
 	python -m pytest tests/integration/test_mock_pipeline.py
+	python -m pytest tests/integration/test_experiment_protocol.py
 
 check: format lint typecheck test smoke
 
