@@ -1,0 +1,14 @@
+model_name: paddleocr-recognizer
+backend: paddleocr
+official_repository: https://github.com/PaddlePaddle/PaddleOCR
+revision: 07603421c20a96bb94bb87d0c4211032527ae706
+checkpoint_identifier: latin_PP-OCRv3_rec_infer
+url: https://paddleocr.bj.bcebos.com/PP-OCRv3/multilingual/latin_PP-OCRv3_rec_infer.tar
+local_path: paddleocr/recognizer
+sha256: null
+license: Apache-2.0
+expected_task: text_recognition
+archive: tar
+label_mapping: null
+fine_tuned_for_invoice: false
+

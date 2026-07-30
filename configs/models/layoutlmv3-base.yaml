@@ -1,0 +1,22 @@
+model_name: layoutlmv3-base
+backend: transformers
+official_repository: https://github.com/microsoft/unilm
+revision: 833df7e7832e5064a281131ee64a481afa8e5b95
+checkpoint_identifier: microsoft/layoutlmv3-base
+checkpoint_revision: cfbbbff0762e6aab37086fdd4739ad14fe7d5db4
+url: https://huggingface.co/microsoft/layoutlmv3-base
+local_path: layoutlmv3-base
+sha256: null
+license: CC-BY-NC-SA-4.0
+expected_task: layout_pretraining_base
+archive: huggingface_snapshot
+files:
+  - config.json
+  - model.safetensors
+  - preprocessor_config.json
+  - tokenizer_config.json
+  - merges.txt
+  - vocab.json
+label_mapping: configs/labels/invoice_bio_labels.yaml
+fine_tuned_for_invoice: false
+

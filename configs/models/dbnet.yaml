@@ -1,0 +1,15 @@
+model_name: dbnet
+backend: official_mhliao_db
+official_repository: https://github.com/MhLiao/DB
+revision: 65ca77a0bcfbd7114b916cf8a1e9ca85114286ce
+checkpoint_identifier: official_synthtext_or_icdar_checkpoint
+url: null
+local_path: dbnet/model
+sha256: null
+license: Apache-2.0
+expected_task: text_detection
+archive: null
+label_mapping: null
+fine_tuned_for_invoice: false
+manual_setup: Clone the exact revision outside this repository and select an official checkpoint.
+

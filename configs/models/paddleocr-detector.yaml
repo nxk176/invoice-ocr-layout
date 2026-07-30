@@ -1,0 +1,14 @@
+model_name: paddleocr-detector
+backend: paddleocr
+official_repository: https://github.com/PaddlePaddle/PaddleOCR
+revision: 07603421c20a96bb94bb87d0c4211032527ae706
+checkpoint_identifier: ch_PP-OCRv4_det_infer
+url: https://paddleocr.bj.bcebos.com/PP-OCRv4/chinese/ch_PP-OCRv4_det_infer.tar
+local_path: paddleocr/detector
+sha256: null
+license: Apache-2.0
+expected_task: text_detection
+archive: tar
+label_mapping: null
+fine_tuned_for_invoice: false
+
