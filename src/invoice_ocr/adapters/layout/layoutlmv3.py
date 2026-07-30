@@ -65,4 +65,3 @@ class LayoutLMv3Adapter(LayoutAdapter):
             "Use the training-produced inference metadata; this checkpoint lacks a supported "
             "alignment contract."
         )
-

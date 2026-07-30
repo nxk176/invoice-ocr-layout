@@ -31,4 +31,3 @@ class OutputExistsError(InvoiceOCRError):
 
 class InvalidGroundTruthError(InvoiceOCRError):
     """Ground-truth files do not conform to the documented contract."""
-

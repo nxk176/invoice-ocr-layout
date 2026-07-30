@@ -28,4 +28,3 @@ class DetectorAdapter(ABC):
     @abstractmethod
     def detect(self, page: DocumentPage) -> list[DetectionRegion]:
         """Detect text polygons on one rendered page."""
-

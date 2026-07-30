@@ -70,4 +70,3 @@ class VietOCRRecognizer(RecognizerAdapter):
                 )
             )
         return results
-

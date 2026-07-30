@@ -41,4 +41,3 @@ def completed_document_ids(path: Path, model_type: type[T]) -> set[str]:
         for record in read_jsonl(path, model_type)
         if getattr(record, "processing_status", None) == "success"
     }
-

@@ -13,7 +13,10 @@ class VILayoutXLMAdapter(LayoutAdapter):
     name = "vi_layoutxlm"
 
     def _validate_runtime(self) -> None:
-        if importlib.util.find_spec("paddle") is None or importlib.util.find_spec("paddlenlp") is None:
+        if (
+            importlib.util.find_spec("paddle") is None
+            or importlib.util.find_spec("paddlenlp") is None
+        ):
             raise DependencyUnavailableError(
                 "VI-LayoutXLM requires compatible paddlepaddle and paddlenlp packages plus "
                 "the official PaddleOCR PP-Structure KIE configuration. See README."
@@ -34,4 +37,3 @@ class VILayoutXLMAdapter(LayoutAdapter):
             "PP-Structure KIE config declared in configs/models/vi_layoutxlm.yaml. No sample "
             "entities are returned when that runtime is unavailable."
         )
-

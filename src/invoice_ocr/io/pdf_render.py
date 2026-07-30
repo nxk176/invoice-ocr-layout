@@ -15,7 +15,9 @@ from invoice_ocr.contracts import (
 from invoice_ocr.exceptions import DependencyUnavailableError
 
 
-def render_document(document: SourceDocument, output_dir: Path, dpi: int = 200) -> list[DocumentPage]:
+def render_document(
+    document: SourceDocument, output_dir: Path, dpi: int = 200
+) -> list[DocumentPage]:
     """Render a source document; intermediate page indexes are always zero-based."""
     if dpi <= 0:
         raise ValueError("render DPI must be positive")
@@ -71,4 +73,3 @@ def render_document(document: SourceDocument, output_dir: Path, dpi: int = 200) 
     finally:
         pdf.close()
     return pages
-

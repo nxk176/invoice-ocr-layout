@@ -10,4 +10,3 @@ RECOGNIZERS: dict[str, type[RecognizerAdapter]] = {
 }
 
 __all__ = ["RECOGNIZERS", "RecognizerAdapter"]
-

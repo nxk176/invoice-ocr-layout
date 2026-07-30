@@ -22,7 +22,10 @@ class DBNetDetector(DetectorAdapter):
     algorithm = "DB"
 
     def _validate_runtime(self) -> Path:
-        if importlib.util.find_spec("concern") is None or importlib.util.find_spec("decoders") is None:
+        if (
+            importlib.util.find_spec("concern") is None
+            or importlib.util.find_spec("decoders") is None
+        ):
             raise DependencyUnavailableError(
                 f"{self.name} requires the official MhLiao/DB checkout at the revision in "
                 "configs/models/dbnet.yaml on PYTHONPATH. See README 'DBNet/DBNet++ setup'."
@@ -42,4 +45,3 @@ class DBNetDetector(DetectorAdapter):
             "YAML and prediction command in configs/models/dbnet.yaml. The adapter refuses "
             "to invoke an unverified API; use PaddleOCR detection until setup is completed."
         )
-

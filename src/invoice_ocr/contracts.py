@@ -305,4 +305,3 @@ def json_compatible(model: BaseModel) -> dict[str, Any]:
 def ensure_relative_path(path: Path) -> str:
     """Return a portable POSIX representation for persisted relative paths."""
     return path.as_posix()
-

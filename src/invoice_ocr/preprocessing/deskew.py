@@ -22,10 +22,7 @@ def deskew_image(source: Path, destination: Path, max_abs_angle: float = 10.0) -
     grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     coordinates = np.column_stack(np.where(grayscale < 250))
     angle = 0.0 if len(coordinates) < 10 else float(cv2.minAreaRect(coordinates)[-1])
-    if angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
+    angle = -(90 + angle) if angle < -45 else -angle
     if abs(angle) > max_abs_angle:
         angle = 0.0
     height, width = image.shape[:2]
@@ -41,4 +38,3 @@ def deskew_image(source: Path, destination: Path, max_abs_angle: float = 10.0) -
     if not cv2.imwrite(str(destination), corrected):
         raise OSError(f"failed to write deskewed image: {destination}")
     return angle
-

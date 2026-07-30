@@ -14,4 +14,3 @@ def enhance_contrast(source: Path, destination: Path, factor: float = 1.2) -> No
     with Image.open(source) as image:
         enhanced = ImageEnhance.Contrast(image.convert("RGB")).enhance(factor)
         enhanced.save(destination)
-

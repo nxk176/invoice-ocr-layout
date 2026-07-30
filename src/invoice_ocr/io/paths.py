@@ -64,4 +64,3 @@ def discover_documents(input_path: Path) -> list[SourceDocument]:
 def prediction_relative_path(relative_source_path: str) -> Path:
     """Preserve directory structure while replacing the source extension with JSON."""
     return Path(relative_source_path).with_suffix(".json")
-

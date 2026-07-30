@@ -12,4 +12,3 @@ DETECTORS: dict[str, type[DetectorAdapter]] = {
 }
 
 __all__ = ["DETECTORS", "DetectorAdapter"]
-

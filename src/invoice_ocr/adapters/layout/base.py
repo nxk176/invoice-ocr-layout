@@ -35,4 +35,3 @@ class LayoutAdapter(ABC):
         self, page: DocumentPage, regions: list[RecognizedRegion]
     ) -> tuple[list[LabeledEntity], list[Relation]]:
         """Predict invoice entities and relations."""
-

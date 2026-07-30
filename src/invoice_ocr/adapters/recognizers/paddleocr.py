@@ -66,4 +66,3 @@ class PaddleOCRRecognizer(RecognizerAdapter):
                 )
             )
         return results
-

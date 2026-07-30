@@ -30,4 +30,3 @@ class RecognizerAdapter(ABC):
         self, page: DocumentPage, regions: list[DetectionRegion]
     ) -> list[RecognizedRegion]:
         """Transcribe detected regions on one page."""
-

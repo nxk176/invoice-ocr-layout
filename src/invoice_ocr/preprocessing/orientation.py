@@ -23,4 +23,3 @@ def correct_exif_orientation(source: Path, destination: Path) -> OrientationMeta
         confidence=1.0 if exif_orientation in rotation_by_exif else None,
         method="exif" if exif_orientation in rotation_by_exif else "none",
     )
-

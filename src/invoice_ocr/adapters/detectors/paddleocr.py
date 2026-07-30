@@ -65,4 +65,3 @@ class PaddleOCRDetector(DetectorAdapter):
                 )
             )
         return regions
-
