@@ -30,6 +30,10 @@ class DetectorAdapter(ABC):
             manifest_revision = None
         self.revision = revision or manifest_revision
 
+    def prepare(self) -> None:
+        """Load and validate reusable runtime state before timed inference."""
+        return None
+
     @abstractmethod
     def detect(self, page: DocumentPage) -> list[DetectionRegion]:
         """Detect text polygons on one rendered page."""

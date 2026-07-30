@@ -30,6 +30,10 @@ class RecognizerAdapter(ABC):
             manifest_revision = None
         self.revision = revision or manifest_revision
 
+    def prepare(self) -> None:
+        """Load and validate reusable runtime state before timed inference."""
+        return None
+
     @abstractmethod
     def recognize(
         self, page: DocumentPage, regions: list[DetectionRegion]

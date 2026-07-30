@@ -21,6 +21,9 @@ class VietOCRRecognizer(RecognizerAdapter):
     name = "vietocr"
 
     def _create_predictor(self) -> Any:
+        existing = getattr(self, "_predictor", None)
+        if existing is not None:
+            return existing
         try:
             from vietocr.tool.config import Cfg
             from vietocr.tool.predictor import Predictor
@@ -30,6 +33,10 @@ class VietOCRRecognizer(RecognizerAdapter):
                 "compatible PyTorch build."
             ) from exc
         checkpoint = self.checkpoint or self.model_root / "vietocr" / "transformerocr.pth"
+        if checkpoint.is_dir():
+            weight_files = sorted(checkpoint.glob("*.pth"))
+            if len(weight_files) == 1:
+                checkpoint = weight_files[0]
         if not checkpoint.is_file():
             raise CheckpointUnavailableError(
                 f"VietOCR checkpoint not found at {checkpoint}. Run "
@@ -39,7 +46,11 @@ class VietOCRRecognizer(RecognizerAdapter):
         config["weights"] = str(checkpoint)
         config["device"] = "cuda:0" if self.device == "cuda" else "cpu"
         config["cnn"]["pretrained"] = False
-        return Predictor(config)
+        self._predictor = Predictor(config)
+        return self._predictor
+
+    def prepare(self) -> None:
+        self._create_predictor()
 
     @staticmethod
     def _crop(image: Image.Image, region: DetectionRegion) -> Image.Image:

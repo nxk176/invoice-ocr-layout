@@ -19,6 +19,9 @@ class PaddleOCRDetector(DetectorAdapter):
     name = "paddleocr"
 
     def _create_engine(self) -> Any:
+        existing = getattr(self, "_engine", None)
+        if existing is not None:
+            return existing
         try:
             from paddleocr import PaddleOCR
         except ImportError as exc:
@@ -34,7 +37,11 @@ class PaddleOCRDetector(DetectorAdapter):
         }
         if self.checkpoint is not None:
             kwargs["det_model_dir"] = str(self.checkpoint)
-        return PaddleOCR(**kwargs)
+        self._engine = PaddleOCR(**kwargs)
+        return self._engine
+
+    def prepare(self) -> None:
+        self._create_engine()
 
     def detect(self, page: DocumentPage) -> list[DetectionRegion]:
         engine = self._create_engine()

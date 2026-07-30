@@ -1,0 +1,21 @@
+protocol: pretrained-vs-finetuned
+split:
+  train_ratio: 0.8
+  validation_ratio: 0.1
+  test_ratio: 0.1
+  grouping_unit: source_document
+evaluation:
+  warmup_iterations: 0
+  metric_code_version: "invoice-ocr-metrics-v2"
+  detector_selection_metric: detection_hmean
+  recognizer_selection_metric: recognition_cer
+  layout_selection_metric: entity_f1
+  validation_tolerance: "0.01"
+training:
+  layout_baseline_mode: linear_probe
+  layout_finetuned_mode: full_finetune
+  learning_rate: 0.00005
+  scheduler: linear
+  optimizer: adamw_torch
+  gradient_accumulation_steps: 1
+  mixed_precision_mode: "none"

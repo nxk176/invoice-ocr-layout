@@ -35,6 +35,10 @@ class LayoutAdapter(ABC):
             manifest_revision = None
         self.revision = revision or manifest_revision
 
+    def prepare(self) -> None:
+        """Load and validate reusable runtime state before timed inference."""
+        return None
+
     @abstractmethod
     def extract(
         self, page: DocumentPage, regions: list[RecognizedRegion]

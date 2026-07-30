@@ -37,6 +37,9 @@ class LayoutLMv3Adapter(LayoutAdapter):
         )
 
     def _load(self) -> tuple[Any, Any, Any]:
+        existing: tuple[Any, Any, Any] | None = getattr(self, "_runtime", None)
+        if existing is not None:
+            return existing
         try:
             import torch
             from transformers import AutoModelForTokenClassification, AutoProcessor
@@ -50,7 +53,11 @@ class LayoutLMv3Adapter(LayoutAdapter):
         model = AutoModelForTokenClassification.from_pretrained(checkpoint)
         model.to("cuda" if self.device == "cuda" else "cpu")
         model.eval()
-        return torch, processor, model
+        self._runtime = (torch, processor, model)
+        return self._runtime
+
+    def prepare(self) -> None:
+        self._load()
 
     def extract(
         self, page: DocumentPage, regions: list[RecognizedRegion]

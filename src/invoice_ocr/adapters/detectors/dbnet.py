@@ -38,6 +38,9 @@ class DBNetDetector(DetectorAdapter):
             )
         return self.checkpoint
 
+    def prepare(self) -> None:
+        self._validate_runtime()
+
     def detect(self, page: DocumentPage) -> list[DetectionRegion]:
         self._validate_runtime()
         raise DependencyUnavailableError(

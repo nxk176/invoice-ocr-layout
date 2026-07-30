@@ -20,6 +20,9 @@ class PaddleOCRRecognizer(RecognizerAdapter):
     name = "paddleocr"
 
     def _create_engine(self) -> Any:
+        existing = getattr(self, "_engine", None)
+        if existing is not None:
+            return existing
         try:
             from paddleocr import PaddleOCR
         except ImportError as exc:
@@ -36,7 +39,11 @@ class PaddleOCRRecognizer(RecognizerAdapter):
         }
         if self.checkpoint is not None:
             kwargs["rec_model_dir"] = str(self.checkpoint)
-        return PaddleOCR(**kwargs)
+        self._engine = PaddleOCR(**kwargs)
+        return self._engine
+
+    def prepare(self) -> None:
+        self._create_engine()
 
     def recognize(
         self, page: DocumentPage, regions: list[DetectionRegion]

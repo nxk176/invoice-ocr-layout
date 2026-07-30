@@ -28,6 +28,9 @@ class VILayoutXLMAdapter(LayoutAdapter):
                 "model does not know this repository's invoice label set."
             )
 
+    def prepare(self) -> None:
+        self._validate_runtime()
+
     def extract(
         self, page: DocumentPage, regions: list[RecognizedRegion]
     ) -> tuple[list[LabeledEntity], list[Relation]]:
