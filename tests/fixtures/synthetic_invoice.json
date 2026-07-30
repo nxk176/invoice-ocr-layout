@@ -1,0 +1,63 @@
+{
+  "document_type": "VAT_INVOICE_BATCH",
+  "invoice_count": 1,
+  "invoices": [
+    {
+      "page_number": 1,
+      "workflow_fields": {
+        "status": {"value": null, "source": "not_found"},
+        "invoice_type": {"value": null, "source": "not_found"},
+        "bid_package": {"value": null, "source": "not_found", "needs_review": false},
+        "delivery_unit": {
+          "value": null,
+          "suggested_value": null,
+          "source": "not_found",
+          "needs_review": false
+        },
+        "receiver_name": {
+          "value": null,
+          "candidate": null,
+          "source": "not_found",
+          "needs_review": false
+        }
+      },
+      "invoice": {
+        "invoice_number": "000042",
+        "invoice_serial": null,
+        "invoice_date": "2026-01-02",
+        "payment_method": null,
+        "invoice_lookup_code": null,
+        "contract_reference": null
+      },
+      "supplier": {
+        "supplier_name": "SYNTHETIC SUPPLIER - NOT A REAL ENTITY",
+        "tax_code": null,
+        "address": null,
+        "phone": null
+      },
+      "buyer": {
+        "buyer_contact": null,
+        "buyer_organization": "SYNTHETIC BUYER - NOT A REAL ENTITY",
+        "tax_code": null,
+        "budgetary_unit_code": null,
+        "address": null
+      },
+      "items": [],
+      "totals": {
+        "subtotal_excluding_vat": null,
+        "vat_rate_percent": null,
+        "vat_total": null,
+        "grand_total": null,
+        "amount_in_words": null
+      },
+      "validation": {
+        "subtotal_plus_vat_equals_grand_total": null,
+        "sum_of_items_equals_subtotal": null,
+        "rounding_difference_detected": false,
+        "item_count": 0,
+        "unresolved_required_fields": []
+      }
+    }
+  ]
+}
+
