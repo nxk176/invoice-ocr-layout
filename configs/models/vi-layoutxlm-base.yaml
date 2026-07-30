@@ -1,5 +1,7 @@
 model_name: vi-layoutxlm-base
 backend: paddleocr_ppstructure
+task: semantic_entity_recognition_xfund_base
+framework: paddlepaddle_ppstructure
 official_repository: https://github.com/PaddlePaddle/PaddleOCR
 revision: 07603421c20a96bb94bb87d0c4211032527ae706
 checkpoint_identifier: ser_vi_layoutxlm_xfund_pretrained
@@ -8,7 +10,13 @@ local_path: vi_layoutxlm/base_xfund
 sha256: null
 license: CC-BY-NC-SA-4.0
 expected_task: semantic_entity_recognition_base
+expected_config: external/PaddleOCR/configs/kie/vi_layoutxlm/ser_vi_layoutxlm_xfund_zh.yml
+pretrained: true
+checkpoint_type: directory
+required_files:
+  - best_accuracy.pdparams
 archive: tar
+strip_components: 1
 label_mapping: configs/labels/invoice_bio_labels.yaml
 fine_tuned_for_invoice: false
 warning: XFUND labels are not invoice labels; fine-tuning is mandatory.

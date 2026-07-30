@@ -13,6 +13,7 @@ class DetectorAdapter(ABC):
     """A detector produces polygons only; it must not perform recognition."""
 
     name: str
+    inference_implementation_available: bool = False
 
     def __init__(
         self,

@@ -13,6 +13,7 @@ class RecognizerAdapter(ABC):
     """A recognizer transcribes detector regions without changing their geometry."""
 
     name: str
+    inference_implementation_available: bool = False
 
     def __init__(
         self,

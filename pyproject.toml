@@ -25,11 +25,24 @@ preprocessing = [
   "opencv-python-headless>=4.10,<5",
 ]
 paddleocr = ["paddleocr==2.9.1"]
-vietocr = ["vietocr==0.3.13"]
+dbnet = [
+  "numpy>=1.26,<3",
+  "opencv-python-headless>=4.10,<5",
+  "pyclipper>=1.3,<2",
+  "shapely>=2.0,<3",
+  "torch>=2.2,<3",
+]
+vietocr = [
+  "torch>=2.2,<3",
+  "torchvision>=0.17,<1",
+  "vietocr==0.3.13",
+]
 layoutlmv3 = [
+  "accelerate>=0.34,<1",
   "torch>=2.2,<3",
   "transformers==4.44.2",
 ]
+vi_layoutxlm = ["paddlenlp==2.6.1"]
 dev = [
   "mypy>=1.11,<2",
   "pytest>=8.3,<9",

@@ -20,7 +20,12 @@ from invoice_ocr.exceptions import ConfigurationError
 from invoice_ocr.io.jsonl import read_jsonl, write_jsonl
 from invoice_ocr.io.paths import discover_documents
 from invoice_ocr.io.pdf_render import render_document
-from invoice_ocr.pipeline import entities_to_table_cells, validate_canonical_payload, write_json
+from invoice_ocr.pipeline import (
+    entities_to_table_cells,
+    resolve_device,
+    validate_canonical_payload,
+    write_json,
+)
 from invoice_ocr.postprocessing.fields import entities_to_invoice, load_workflow_defaults
 from invoice_ocr.postprocessing.validation import validate_invoice
 from invoice_ocr.reconstruction.medicine_rows import reconstruct_medicine_item, reconstruct_rows
@@ -33,7 +38,8 @@ def run_detect_stage(
     model_root: Path,
     device: str,
 ) -> Path:
-    detector = DETECTORS[detector_name](model_root, device)
+    detector = DETECTORS[detector_name](model_root, resolve_device(device))
+    detector.prepare()
     pages_path = output_dir / "pages.jsonl"
     detections_path = output_dir / "detections.jsonl"
     for document in discover_documents(input_path):
@@ -58,7 +64,8 @@ def run_recognize_stage(
     by_page: dict[tuple[str, int], list[DetectionRegion]] = defaultdict(list)
     for region in detections:
         by_page[(region.document_id, region.page_index)].append(region)
-    recognizer = RECOGNIZERS[recognizer_name](model_root, device)
+    recognizer = RECOGNIZERS[recognizer_name](model_root, resolve_device(device))
+    recognizer.prepare()
     target = output_dir / "recognitions.jsonl"
     for page in pages:
         regions = by_page[(page.document_id, page.page_index)]
@@ -80,7 +87,8 @@ def run_extract_stage(
     by_page: dict[tuple[str, int], list[RecognizedRegion]] = defaultdict(list)
     for region in recognized:
         by_page[(region.document_id, region.page_index)].append(region)
-    layout = LAYOUT_ADAPTERS[layout_name](model_root, device)
+    layout = LAYOUT_ADAPTERS[layout_name](model_root, resolve_device(device))
+    layout.prepare()
     target = output_dir / "entities.jsonl"
     for page in pages:
         entities, _relations = layout.extract(page, by_page[(page.document_id, page.page_index)])

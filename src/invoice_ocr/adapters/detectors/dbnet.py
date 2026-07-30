@@ -30,13 +30,16 @@ class DBNetDetector(DetectorAdapter):
                 f"{self.name} requires the official MhLiao/DB checkout at the revision in "
                 "configs/models/dbnet.yaml on PYTHONPATH. See README 'DBNet/DBNet++ setup'."
             )
-        if self.checkpoint is None or not self.checkpoint.is_file():
-            expected = self.checkpoint or self.model_root / self.name / "model"
+        default_name = (
+            "totaltext_resnet50" if self.name == "dbnet" else "td500_resnet50_deform_thre_asf"
+        )
+        checkpoint = self.checkpoint or self.model_root / self.name / default_name
+        if not checkpoint.is_file():
             raise CheckpointUnavailableError(
-                f"{self.name} checkpoint not found at {expected}. Download the declared base "
+                f"{self.name} checkpoint not found at {checkpoint}. Download the declared base "
                 "checkpoint or provide a trained checkpoint; no fallback output is generated."
             )
-        return self.checkpoint
+        return checkpoint
 
     def prepare(self) -> None:
         self._validate_runtime()

@@ -19,6 +19,7 @@ from invoice_ocr.exceptions import CheckpointUnavailableError, DependencyUnavail
 
 class LayoutLMv3Adapter(LayoutAdapter):
     name = "layoutlmv3"
+    inference_implementation_available = True
 
     def resolve_checkpoint(self) -> Any:
         candidates = [

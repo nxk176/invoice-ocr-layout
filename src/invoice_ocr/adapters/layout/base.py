@@ -18,6 +18,7 @@ class LayoutAdapter(ABC):
     """A layout model labels OCR regions and optionally predicts relations."""
 
     name: str
+    inference_implementation_available: bool = False
 
     def __init__(
         self,

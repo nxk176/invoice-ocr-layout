@@ -90,9 +90,20 @@ def resolve_device(device: str) -> str:
     try:
         import torch
 
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    except ImportError:
-        return "cpu"
+        torch_cuda = bool(torch.cuda.is_available())
+    except (ImportError, OSError):
+        torch_cuda = False
+    if torch_cuda:
+        return "cuda"
+    try:
+        import paddle
+
+        paddle_cuda = bool(paddle.is_compiled_with_cuda())
+    except (ImportError, OSError):
+        paddle_cuda = False
+    if paddle_cuda:
+        return "cuda"
+    return "cpu"
 
 
 def load_pipeline_config(path: Path | None) -> dict[str, Any]:

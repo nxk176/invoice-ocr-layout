@@ -12,11 +12,24 @@ from invoice_ocr.contracts import (
     Point,
     ProcessingStatus,
 )
-from invoice_ocr.exceptions import DependencyUnavailableError
+from invoice_ocr.exceptions import CheckpointUnavailableError, DependencyUnavailableError
 
 
 class PaddleOCRDetector(DetectorAdapter):
     name = "paddleocr"
+    inference_implementation_available = True
+
+    def _resolve_checkpoint(self) -> Any:
+        checkpoint = self.checkpoint or self.model_root / "paddleocr" / "detector"
+        required = ("inference.pdmodel", "inference.pdiparams")
+        missing = [name for name in required if not (checkpoint / name).is_file()]
+        if missing:
+            raise CheckpointUnavailableError(
+                f"PaddleOCR detector checkpoint is incomplete at {checkpoint}; missing "
+                f"{', '.join(missing)}. Run 'python scripts/download_models.py "
+                "--model paddleocr-detector'."
+            )
+        return checkpoint
 
     def _create_engine(self) -> Any:
         existing = getattr(self, "_engine", None)
@@ -34,9 +47,8 @@ class PaddleOCRDetector(DetectorAdapter):
             "use_angle_cls": False,
             "use_gpu": self.device == "cuda",
             "show_log": False,
+            "det_model_dir": str(self._resolve_checkpoint()),
         }
-        if self.checkpoint is not None:
-            kwargs["det_model_dir"] = str(self.checkpoint)
         self._engine = PaddleOCR(**kwargs)
         return self._engine
 

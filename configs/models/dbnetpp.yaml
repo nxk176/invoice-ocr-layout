@@ -1,15 +1,21 @@
 model_name: dbnetpp
 backend: official_mhliao_db
+task: text_detection
+framework: pytorch_official_source
 official_repository: https://github.com/MhLiao/DB
 revision: 65ca77a0bcfbd7114b916cf8a1e9ca85114286ce
-checkpoint_identifier: official_deformable_resnet_experiment_checkpoint
+checkpoint_identifier: td500_resnet50_deform_thre_asf
 url: null
-local_path: dbnetpp/model
+local_path: dbnetpp/td500_resnet50_deform_thre_asf
 sha256: null
-license: Apache-2.0
+license: upstream repository has no standalone LICENSE file; review required
 expected_task: text_detection
+expected_config: external/DB/experiments/seg_detector/td500_resnet50_deform_thre_asf.yaml
+pretrained: true
+checkpoint_type: file
+required_files: []
 archive: null
 label_mapping: null
 fine_tuned_for_invoice: false
-manual_setup: Clone the exact revision outside this repository and select an official DB++ checkpoint.
+manual_setup: Fetch the pinned official source and download the DB++ TD500 ASF checkpoint from the upstream trained-model table.
 

@@ -1,5 +1,7 @@
 model_name: paddleocr-detector
 backend: paddleocr
+task: text_detection
+framework: paddlepaddle
 official_repository: https://github.com/PaddlePaddle/PaddleOCR
 revision: 07603421c20a96bb94bb87d0c4211032527ae706
 checkpoint_identifier: ch_PP-OCRv4_det_infer
@@ -8,7 +10,14 @@ local_path: paddleocr/detector
 sha256: null
 license: Apache-2.0
 expected_task: text_detection
+expected_config: external/PaddleOCR/configs/det/ch_PP-OCRv4/ch_PP-OCRv4_det_student.yml
+pretrained: true
+checkpoint_type: directory
+required_files:
+  - inference.pdmodel
+  - inference.pdiparams
 archive: tar
+strip_components: 1
 label_mapping: null
 fine_tuned_for_invoice: false
 

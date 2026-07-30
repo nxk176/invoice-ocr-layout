@@ -258,6 +258,34 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
     )
     experiment.add_argument("--validation-tolerance", default="0.01")
+
+    verify_models = subparsers.add_parser(
+        "verify-models",
+        help="verify dependency, source, checkpoint, and implementation readiness",
+    )
+    verify_selection = verify_models.add_mutually_exclusive_group(required=True)
+    verify_selection.add_argument("--all", action="store_true")
+    verify_selection.add_argument(
+        "--backend",
+        action="append",
+        choices=(
+            "paddleocr-detector",
+            "dbnet",
+            "dbnetpp",
+            "paddleocr-recognizer",
+            "vietocr",
+            "layoutlmv3",
+            "vi_layoutxlm",
+        ),
+    )
+    verify_models.add_argument("--model-root", type=Path, default=Path("models"))
+    verify_models.add_argument("--external-root", type=Path, default=Path("external"))
+    verify_models.add_argument(
+        "--require",
+        choices=("any", "inference", "training", "both"),
+        default="any",
+    )
+    verify_models.add_argument("--json", action="store_true", dest="json_output")
     return parser
 
 
@@ -419,6 +447,10 @@ def _dispatch_experiment(args: argparse.Namespace) -> int:
 
 
 def dispatch(args: argparse.Namespace) -> int:
+    if args.command == "verify-models":
+        from invoice_ocr.model_verification import run_verification
+
+        return run_verification(args)
     if args.command == "run":
         logger = configure_logging(args.output / "logs" / "run.log")
         PipelineRunner(selection_from_args(args), options_from_args(args), logger=logger).run()

@@ -92,7 +92,7 @@ def test_runtime_roots_are_fully_ignored_without_placeholder_exceptions() -> Non
         line.strip()
         for line in (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
     }
-    assert {f"{directory}/" for directory in RUNTIME_DIRECTORY_NAMES} <= lines
+    assert {f"/{directory}/" for directory in RUNTIME_DIRECTORY_NAMES} <= lines
     assert not any(
         line.startswith(f"!{directory}/") for directory in RUNTIME_DIRECTORY_NAMES for line in lines
     )

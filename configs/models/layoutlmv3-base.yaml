@@ -1,5 +1,7 @@
 model_name: layoutlmv3-base
 backend: transformers
+task: layout_token_classification_encoder
+framework: pytorch_transformers
 official_repository: https://github.com/microsoft/unilm
 revision: 833df7e7832e5064a281131ee64a481afa8e5b95
 checkpoint_identifier: microsoft/layoutlmv3-base
@@ -9,6 +11,16 @@ local_path: layoutlmv3-base
 sha256: null
 license: CC-BY-NC-SA-4.0
 expected_task: layout_pretraining_base
+expected_config: transformers.AutoProcessor+AutoModelForTokenClassification
+pretrained: true
+checkpoint_type: directory
+required_files:
+  - config.json
+  - model.safetensors
+  - preprocessor_config.json
+  - tokenizer_config.json
+  - merges.txt
+  - vocab.json
 archive: huggingface_snapshot
 files:
   - config.json

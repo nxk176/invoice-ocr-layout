@@ -1,56 +1,37 @@
-"""Implementation for the public base-model manifest downloader."""
+"""Download and verify revision-pinned public base checkpoints."""
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import logging
 import shutil
+import sys
 import tarfile
 import urllib.error
 import urllib.request
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PurePosixPath
+from typing import Any, BinaryIO
 
-import yaml
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from invoice_ocr.model_catalog import (  # noqa: E402
+    available_model_names,
+    checkpoint_path,
+    load_model_manifest,
+    sha256_file,
+    verify_checkpoint,
+)
 
 LOGGER = logging.getLogger("download_models")
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_ROOT = PROJECT_ROOT / "configs" / "models"
 
 
 def load_manifest(name: str) -> dict[str, Any]:
-    path = MANIFEST_ROOT / f"{name}.yaml"
-    if not path.is_file():
-        available = ", ".join(sorted(item.stem for item in MANIFEST_ROOT.glob("*.yaml")))
-        raise ValueError(f"unknown model '{name}'. Available manifests: {available}")
-    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(loaded, dict):
-        raise ValueError(f"model manifest must be a YAML mapping: {path}")
-    required = {
-        "model_name",
-        "backend",
-        "official_repository",
-        "revision",
-        "checkpoint_identifier",
-        "local_path",
-        "license",
-        "expected_task",
-    }
-    missing = sorted(required - loaded.keys())
-    if missing:
-        raise ValueError(f"manifest {path} is missing fields: {', '.join(missing)}")
-    if loaded.get("fine_tuned_for_invoice") is True:
-        raise ValueError("downloader refuses invoice fine-tuned checkpoints")
-    return loaded
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """Compatibility wrapper around the shared validated manifest loader."""
+    return load_model_manifest(name, MANIFEST_ROOT)
 
 
 def download_file(url: str, destination: Path) -> str:
@@ -68,19 +49,39 @@ def download_file(url: str, destination: Path) -> str:
     return sha256_file(destination)
 
 
-def safe_extract_tar(archive: Path, destination: Path) -> None:
-    """Validate every member before extraction; compatible with Python 3.10."""
+def _copy_member(source: BinaryIO, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("wb") as output:
+        shutil.copyfileobj(source, output)
+
+
+def safe_extract_tar(archive: Path, destination: Path, strip_components: int = 0) -> None:
+    """Extract ordinary files only, optionally removing a common archive prefix."""
+    if strip_components < 0:
+        raise ValueError("strip_components must be non-negative")
     destination.mkdir(parents=True, exist_ok=True)
     destination_root = destination.resolve()
     with tarfile.open(archive) as bundle:
-        members = bundle.getmembers()
-        for member in members:
-            member_path = (destination / member.name).resolve()
-            if destination_root not in member_path.parents and member_path != destination_root:
-                raise ValueError(f"unsafe archive member path: {member.name}")
+        for member in bundle.getmembers():
             if member.issym() or member.islnk():
                 raise ValueError(f"archive links are not allowed: {member.name}")
-        bundle.extractall(destination, members=members)
+            parts = PurePosixPath(member.name).parts
+            if len(parts) <= strip_components:
+                continue
+            relative = Path(*parts[strip_components:])
+            target = (destination / relative).resolve()
+            if destination_root not in target.parents and target != destination_root:
+                raise ValueError(f"unsafe archive member path: {member.name}")
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError(f"unsupported archive member type: {member.name}")
+            source = bundle.extractfile(member)
+            if source is None:
+                raise ValueError(f"could not read archive member: {member.name}")
+            with source:
+                _copy_member(source, target)
 
 
 def download_snapshot(manifest: dict[str, Any], destination: Path) -> None:
@@ -96,25 +97,46 @@ def download_snapshot(manifest: dict[str, Any], destination: Path) -> None:
         LOGGER.info("Downloaded %s (sha256=%s)", target, digest)
 
 
+def _write_download_digest(destination: Path, target: Path, digest: str) -> None:
+    digest_path = (
+        destination / "DOWNLOAD.sha256"
+        if destination.is_dir()
+        else destination.with_suffix(destination.suffix + ".sha256")
+    )
+    digest_path.parent.mkdir(parents=True, exist_ok=True)
+    digest_path.write_text(f"{digest}  {target.name}\n", encoding="utf-8")
+
+
 def download_model(manifest: dict[str, Any], model_root: Path, force: bool) -> str:
-    destination = model_root / str(manifest["local_path"])
+    destination = checkpoint_path(manifest, model_root)
     if destination.exists() and not force:
-        return f"kept existing {destination}"
+        valid, digest, reason = verify_checkpoint(manifest, model_root)
+        if not valid:
+            raise ValueError(
+                f"existing checkpoint for {manifest['model_name']} is invalid: {reason}; "
+                "inspect it or rerun with --force"
+            )
+        return f"kept verified {destination} (sha256={digest})"
+
     url = manifest.get("url")
     if not url:
         setup = manifest.get("manual_setup", "follow the official repository instructions")
         return f"manual setup required for {manifest['model_name']}: {setup}"
+
     archive_type = manifest.get("archive")
     if archive_type == "huggingface_snapshot":
         download_snapshot(manifest, destination)
-        return f"downloaded snapshot to {destination}"
+        valid, digest, reason = verify_checkpoint(manifest, model_root)
+        if not valid:
+            raise ValueError(f"downloaded snapshot is incomplete: {reason}")
+        return f"downloaded verified snapshot to {destination} (sha256={digest})"
+
     target = (
         model_root / ".downloads" / Path(str(url)).name if archive_type == "tar" else destination
     )
     digest = download_file(str(url), target)
     expected = manifest.get("sha256")
-    if expected and digest.casefold() != str(expected).casefold():
-        target.unlink()
+    if expected and digest != str(expected):
         raise ValueError(
             f"checksum mismatch for {manifest['model_name']}: expected {expected}, got {digest}"
         )
@@ -125,24 +147,49 @@ def download_model(manifest: dict[str, Any], model_root: Path, force: bool) -> s
             digest,
         )
     if archive_type == "tar":
-        safe_extract_tar(target, destination)
-    digest_path = (
-        destination / "DOWNLOAD.sha256"
-        if destination.is_dir()
-        else destination.with_suffix(destination.suffix + ".sha256")
+        safe_extract_tar(
+            target,
+            destination,
+            strip_components=int(manifest.get("strip_components", 0)),
+        )
+    _write_download_digest(destination, target, digest)
+    valid, checkpoint_digest, reason = verify_checkpoint(manifest, model_root)
+    if not valid:
+        raise ValueError(f"downloaded checkpoint is incomplete: {reason}")
+    return (
+        f"downloaded verified {manifest['model_name']} to {destination} "
+        f"(sha256={checkpoint_digest})"
     )
-    digest_path.parent.mkdir(parents=True, exist_ok=True)
-    digest_path.write_text(f"{digest}  {target.name}\n", encoding="utf-8")
-    return f"downloaded {manifest['model_name']} to {destination}"
+
+
+def verify_models(names: list[str], model_root: Path) -> int:
+    failed = False
+    for name in names:
+        manifest = load_manifest(name)
+        ready, digest, reason = verify_checkpoint(manifest, model_root)
+        if ready:
+            print(f"READY {manifest['model_name']}: sha256={digest}")
+        else:
+            failed = True
+            print(f"NOT_READY {manifest['model_name']}: {reason}")
+    return 2 if failed else 0
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Download revision-pinned public base models; never invoice weights."
+        description="Download or verify revision-pinned public base models; never invoice weights."
     )
     selection = parser.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--model")
+    selection.add_argument(
+        "--model",
+        choices=available_model_names(include_aliases=True),
+    )
     selection.add_argument("--all", action="store_true")
+    selection.add_argument(
+        "--verify",
+        action="store_true",
+        help="verify every declared checkpoint without downloading",
+    )
     parser.add_argument("--model-root", type=Path, default=PROJECT_ROOT / "models")
     parser.add_argument("--force", action="store_true")
     return parser
@@ -151,12 +198,15 @@ def build_parser() -> argparse.ArgumentParser:
 def run(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     args = build_parser().parse_args(argv)
-    args.model_root.mkdir(parents=True, exist_ok=True)
-    names = sorted(path.stem for path in MANIFEST_ROOT.glob("*.yaml")) if args.all else [args.model]
+    model_root: Path = args.model_root
+    model_root.mkdir(parents=True, exist_ok=True)
+    names = list(available_model_names()) if args.all or args.verify else [args.model]
     try:
+        if args.verify:
+            return verify_models(names, model_root)
         for name in names:
-            print(download_model(load_manifest(name), args.model_root, args.force))
+            print(download_model(load_manifest(name), model_root, args.force))
         return 0
-    except (OSError, RuntimeError, ValueError, yaml.YAMLError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         LOGGER.error("%s", exc)
         return 2

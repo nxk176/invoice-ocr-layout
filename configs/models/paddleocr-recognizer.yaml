@@ -1,5 +1,7 @@
 model_name: paddleocr-recognizer
 backend: paddleocr
+task: text_recognition
+framework: paddlepaddle
 official_repository: https://github.com/PaddlePaddle/PaddleOCR
 revision: 07603421c20a96bb94bb87d0c4211032527ae706
 checkpoint_identifier: latin_PP-OCRv3_rec_infer
@@ -8,7 +10,14 @@ local_path: paddleocr/recognizer
 sha256: null
 license: Apache-2.0
 expected_task: text_recognition
+expected_config: external/PaddleOCR/configs/rec/PP-OCRv3/multi_language/latin_PP-OCRv3_rec.yml
+pretrained: true
+checkpoint_type: directory
+required_files:
+  - inference.pdmodel
+  - inference.pdiparams
 archive: tar
+strip_components: 1
 label_mapping: null
 fine_tuned_for_invoice: false
 

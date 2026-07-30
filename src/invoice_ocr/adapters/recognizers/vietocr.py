@@ -19,6 +19,7 @@ from invoice_ocr.exceptions import CheckpointUnavailableError, DependencyUnavail
 
 class VietOCRRecognizer(RecognizerAdapter):
     name = "vietocr"
+    inference_implementation_available = True
 
     def _create_predictor(self) -> Any:
         existing = getattr(self, "_predictor", None)

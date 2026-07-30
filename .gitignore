@@ -1,10 +1,10 @@
 # Private inputs and generated artifacts
-data/
-GT/
-models/
-work/
-outputs/
-external/
+/data/
+/GT/
+/models/
+/work/
+/outputs/
+/external/
 
 # Secrets and local environments
 .env

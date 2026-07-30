@@ -1,0 +1,51 @@
+schema_version: 1
+sources:
+  paddleocr:
+    backends:
+      - paddleocr-detector
+      - paddleocr-recognizer
+      - vi_layoutxlm
+    official_repository: https://github.com/PaddlePaddle/PaddleOCR.git
+    revision: 07603421c20a96bb94bb87d0c4211032527ae706
+    tag: v2.9.1
+    local_path: PaddleOCR
+    required: true
+    required_for:
+      - paddleocr_training
+      - vi_layoutxlm_inference
+      - vi_layoutxlm_training
+    reason: >-
+      The PyPI package covers PaddleOCR inference, but tools/train.py and the
+      PP-Structure VI-LayoutXLM configs/runtimes are only available in the official
+      source tree.
+    license: Apache-2.0
+  dbnet:
+    backends:
+      - dbnet
+      - dbnetpp
+    official_repository: https://github.com/MhLiao/DB.git
+    revision: 65ca77a0bcfbd7114b916cf8a1e9ca85114286ce
+    tag: null
+    local_path: DB
+    required: true
+    required_for:
+      - inference
+      - training
+    reason: >-
+      MhLiao/DB has no stable installable Python package; DBNet and DBNet++ use
+      revision-sensitive experiment, model builder, representer, and training code.
+    license: upstream repository has no standalone LICENSE file; review required
+  vietocr:
+    backends:
+      - vietocr
+    official_repository: https://github.com/pbcquoc/vietocr.git
+    revision: fe8c3a7fc714aec57ab81cec844eb3adf0c1636c
+    tag: null
+    local_path: vietocr
+    required: false
+    required_for: []
+    reason: >-
+      The pinned vietocr==0.3.13 package contains Predictor and Trainer APIs, so a
+      source checkout is not required. The current project training integration is
+      still incomplete and is reported separately.
+    license: Apache-2.0

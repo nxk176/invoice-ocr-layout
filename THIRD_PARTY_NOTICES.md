@@ -6,7 +6,8 @@ source repositories or model weights.
 Supported upstream projects:
 
 - PaddleOCR core OCR code — Apache License 2.0.
-- DBNet / DBNet++ official MhLiao/DB repository — Apache License 2.0.
+- DBNet / DBNet++ official MhLiao/DB repository - the pinned revision does not
+  contain a standalone LICENSE file; legal review is required before use.
 - VietOCR — Apache License 2.0.
 - Microsoft UniLM repository — MIT at repository level; the LayoutLMv3 component and
   `microsoft/layoutlmv3-base` model card state CC-BY-NC-SA-4.0.

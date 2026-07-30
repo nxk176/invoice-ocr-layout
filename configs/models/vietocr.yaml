@@ -1,5 +1,7 @@
 model_name: vietocr
 backend: vietocr
+task: text_recognition
+framework: pytorch_vietocr
 official_repository: https://github.com/pbcquoc/vietocr
 revision: fe8c3a7fc714aec57ab81cec844eb3adf0c1636c
 checkpoint_identifier: vgg_transformer
@@ -8,6 +10,10 @@ local_path: vietocr/transformerocr.pth
 sha256: null
 license: Apache-2.0
 expected_task: text_recognition
+expected_config: vietocr.tool.config.Cfg/vgg_transformer
+pretrained: true
+checkpoint_type: file
+required_files: []
 archive: null
 label_mapping: null
 fine_tuned_for_invoice: false

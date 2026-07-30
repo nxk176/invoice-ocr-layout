@@ -613,3 +613,107 @@ Script dùng conda environment đang active, tự dùng/tạo mặc định
 `GT/splits/split_v1.json`, hỗ trợ `--resume`/`--force`, và trả non-zero nếu toàn bộ experiment
 đều thất bại hoặc bị skip. Dùng `--all-combinations` thay `--pipeline A B C` để chạy đủ 12 tổ
 hợp. Server không cần và không được giả định có Codex.
+
+## 17. Audit backend model thật và kiểm tra readiness
+
+Audit chi tiết theo từng backend nằm tại
+[docs/model_backend_audit.md](docs/model_backend_audit.md). Class/adapter tồn tại không đồng
+nghĩa backend đã hỗ trợ production. Trạng thái đã xác minh:
+
+- PaddleOCR detector và recognizer: inference thật qua package `paddleocr==2.9.1`; chưa có
+  tích hợp training hoàn chỉnh với dataset/resume/best-validation checkpoint.
+- VietOCR: inference thật qua `vietocr==0.3.13`; training integration hiện tại chưa hoàn chỉnh.
+- LayoutLMv3: inference thật chỉ với checkpoint token-classification đã fine-tune cho invoice;
+  locked experiment có training thật, chọn best checkpoint chỉ bằng validation. Base encoder
+  không phải invoice extractor.
+- DBNet, DBNet++ và VI-LayoutXLM: production adapter hiện vẫn là scaffold và luôn được
+  `verify-models` đánh dấu chưa sẵn sàng; không fallback sang PaddleOCR hoặc mock.
+
+Fetch source chính thức ở exact commit (không vendor vào Git):
+
+```bash
+python scripts/fetch_model_sources.py --source paddleocr
+python scripts/fetch_model_sources.py --source dbnet
+python scripts/fetch_model_sources.py --source vietocr
+python scripts/fetch_model_sources.py --all
+python scripts/fetch_model_sources.py --verify
+```
+
+VietOCR source checkout không bắt buộc vì package pin đã có API Predictor/Trainer; lệnh
+`--source vietocr` báo `NOT_REQUIRED`. PaddleOCR source chỉ cần cho official training tools và
+VI-LayoutXLM; PaddleOCR inference thường không cần checkout. DBNet/DBNet++ cần cùng checkout
+`external/DB`. Source fetcher không sửa checkout sai commit, dirty hoặc khác remote.
+
+Các checkpoint public/base:
+
+```bash
+python scripts/download_models.py --model paddleocr-detector
+python scripts/download_models.py --model paddleocr-recognizer
+python scripts/download_models.py --model dbnet
+python scripts/download_models.py --model dbnetpp
+python scripts/download_models.py --model vietocr
+python scripts/download_models.py --model layoutlmv3-base
+python scripts/download_models.py --model vi-layoutxlm
+python scripts/download_models.py --all
+python scripts/download_models.py --verify
+```
+
+DBNet/DBNet++ upstream chỉ công bố link Google Drive/Baidu trong bảng trained models, nên
+downloader báo manual setup thay vì bịa URL/checksum. SHA-256 không có từ upstream được ghi
+`null`; sau khi tải, downloader tính và in/lưu digest thực tế. Không manifest nào khai báo
+checkpoint invoice fine-tuned chưa tồn tại.
+
+Kiểm tra readiness không cần data:
+
+```bash
+python -m invoice_ocr.cli verify-models --all
+python -m invoice_ocr.cli verify-models --backend dbnetpp
+python -m invoice_ocr.cli verify-models --backend layoutlmv3
+python -m invoice_ocr.cli verify-models \
+  --backend paddleocr-detector \
+  --backend vietocr \
+  --backend layoutlmv3 \
+  --model-root models \
+  --external-root external
+```
+
+Mặc định backend đạt nếu inference **hoặc** training path thật đã sẵn sàng. Dùng
+`--require inference`, `--require training` hoặc `--require both` để siết điều kiện. Command trả
+non-zero nếu bất kỳ backend được yêu cầu không đạt và luôn nêu dependency/source/checkpoint/
+implementation còn thiếu.
+
+Setup server hỗ trợ ba mức:
+
+```bash
+bash scripts/setup_server.sh --minimal
+bash scripts/setup_server.sh --pipeline paddleocr vietocr layoutlmv3
+bash scripts/setup_server.sh --all-models
+```
+
+Setup theo pipeline chỉ chọn đúng ba backend, source/checkpoint và dependency extra tương ứng.
+PaddlePaddle là dependency phụ thuộc phần cứng: cài bản `paddlepaddle` hoặc
+`paddlepaddle-gpu` theo matrix CPU/CUDA chính thức trước khi verify; script không tự đoán bản
+CUDA. `--all-models` sẽ báo non-zero chừng nào các scaffold DBNet/DBNet++/VI-LayoutXLM chưa có
+implementation production hoàn chỉnh.
+
+Lệnh server cho pipeline đầu tiên:
+
+```bash
+cd /mnt/disk4/khainx/invoice-ocr-layout
+conda activate nxk
+git pull
+
+# Cài PaddlePaddle phù hợp CPU/CUDA theo tài liệu chính thức trước bước này.
+bash scripts/setup_server.sh --pipeline paddleocr vietocr layoutlmv3
+
+python -m invoice_ocr.cli verify-models \
+  --backend paddleocr-detector \
+  --backend vietocr \
+  --backend layoutlmv3 \
+  --model-root /mnt/disk4/khainx/invoice-ocr-layout/models \
+  --external-root /mnt/disk4/khainx/invoice-ocr-layout/external
+```
+
+Trước khi có data, LayoutLMv3 có thể `ready_for_training=true` nhờ base checkpoint nhưng
+`ready_for_inference=false` cho đến khi tạo `models/layoutlmv3/invoice-best`. Sau training, chạy
+lại command với `--require inference` để xác nhận toàn pipeline inference đã sẵn sàng.
