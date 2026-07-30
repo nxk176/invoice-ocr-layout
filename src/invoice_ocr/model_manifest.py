@@ -32,4 +32,3 @@ def load_adapter_manifest(stage: str, adapter_name: str) -> dict[str, Any]:
 
 def adapter_revision(stage: str, adapter_name: str) -> str:
     return str(load_adapter_manifest(stage, adapter_name)["revision"])
-
