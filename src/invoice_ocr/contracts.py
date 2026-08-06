@@ -119,6 +119,16 @@ class LabeledEntity(StageRecord):
     region_ids: list[str] = Field(default_factory=list)
 
 
+class PretrainedLayoutTrace(StageRecord):
+    """Evidence that a label-free pretrained layout model processed one page."""
+
+    checkpoint: str
+    recognized_region_count: int = Field(ge=0)
+    encoded_token_count: int = Field(ge=0)
+    hidden_size: int = Field(ge=1)
+    message: str
+
+
 class Relation(StageRecord):
     relation_id: str
     source_entity_id: str

@@ -79,6 +79,7 @@ def enumerate_pipeline_combinations() -> list[PipelineSelection]:
         for detector in DETECTOR_NAMES
         for recognizer in RECOGNIZER_NAMES
         for layout in LAYOUT_NAMES
+        if LAYOUT_ADAPTERS[layout].provides_invoice_labels
     ]
 
 
@@ -256,6 +257,7 @@ class PipelineRunner:
                 self.work_dir / "recognitions.jsonl",
                 self.work_dir / "entities.jsonl",
                 self.work_dir / "tables.jsonl",
+                self.work_dir / "layout_raw.jsonl",
                 self.options.output_path / "errors.jsonl",
             ):
                 if path.is_file():
@@ -284,6 +286,7 @@ class PipelineRunner:
                 "num_workers": self.options.num_workers,
                 "resume": self.options.resume,
                 "keep_intermediate": self.options.keep_intermediate,
+                "semantic_invoice_output": self.layout.provides_invoice_labels,
             },
         )
         write_json(self.options.output_path / "manifest.json", manifest.model_dump(mode="python"))
@@ -315,6 +318,11 @@ class PipelineRunner:
                     write_jsonl(self.work_dir / "recognitions.jsonl", recognitions, append=True)
                     entities, _relations = self.layout.extract(page, recognitions)
                     write_jsonl(self.work_dir / "entities.jsonl", entities, append=True)
+                    trace = self.layout.raw_trace()
+                    if trace is not None:
+                        write_jsonl(self.work_dir / "layout_raw.jsonl", [trace], append=True)
+                    if not self.layout.provides_invoice_labels:
+                        continue
                     table_cells = entities_to_table_cells(entities)
                     write_jsonl(self.work_dir / "tables.jsonl", table_cells, append=True)
                     invoice = entities_to_invoice(
@@ -327,10 +335,11 @@ class PipelineRunner:
                     ]
                     validate_invoice(invoice, tolerance, required_fields)
                     invoices.append(invoice)
-                batch = InvoiceBatch(invoice_count=len(invoices), invoices=invoices)
-                payload = batch.model_dump(mode="python", exclude_none=False)
-                validate_canonical_payload(payload)
-                write_json(prediction_path, payload)
+                if self.layout.provides_invoice_labels:
+                    batch = InvoiceBatch(invoice_count=len(invoices), invoices=invoices)
+                    payload = batch.model_dump(mode="python", exclude_none=False)
+                    validate_canonical_payload(payload)
+                    write_json(prediction_path, payload)
                 completed += 1
             except Exception as exc:
                 failed += 1
@@ -359,6 +368,7 @@ class PipelineRunner:
             "failed_document_count": failed,
             "processing_seconds": elapsed,
             "seconds_per_document": elapsed / len(documents),
+            "semantic_invoice_output": self.layout.provides_invoice_labels,
         }
         write_json(self.options.output_path / "metrics.json", metrics)
         summary = (

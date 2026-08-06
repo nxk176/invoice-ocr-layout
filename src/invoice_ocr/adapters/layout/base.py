@@ -8,6 +8,7 @@ from pathlib import Path
 from invoice_ocr.contracts import (
     DocumentPage,
     LabeledEntity,
+    PretrainedLayoutTrace,
     RecognizedRegion,
     Relation,
 )
@@ -19,6 +20,7 @@ class LayoutAdapter(ABC):
 
     name: str
     inference_implementation_available: bool = False
+    provides_invoice_labels: bool = True
 
     def __init__(
         self,
@@ -38,6 +40,10 @@ class LayoutAdapter(ABC):
 
     def prepare(self) -> None:
         """Load and validate reusable runtime state before timed inference."""
+        return None
+
+    def raw_trace(self) -> PretrainedLayoutTrace | None:
+        """Return evidence for the latest label-free pretrained forward pass."""
         return None
 
     @abstractmethod

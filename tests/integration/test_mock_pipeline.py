@@ -14,6 +14,7 @@ from invoice_ocr.contracts import (
     DocumentPage,
     LabeledEntity,
     Point,
+    PretrainedLayoutTrace,
     ProcessingStatus,
     RecognizedRegion,
     Relation,
@@ -187,3 +188,59 @@ def test_synthetic_mock_pipeline_and_resume(tmp_path: Path) -> None:
     first_call_count = detector.calls
     runner.run()
     assert detector.calls == first_call_count
+
+
+class MockRawLayout(LayoutAdapter):
+    name = "mock-layout-base"
+    provides_invoice_labels = False
+
+    def __init__(self, model_root: Path) -> None:
+        super().__init__(model_root)
+        self._trace: PretrainedLayoutTrace | None = None
+
+    def extract(
+        self, page: DocumentPage, regions: list[RecognizedRegion]
+    ) -> tuple[list[LabeledEntity], list[Relation]]:
+        self._trace = PretrainedLayoutTrace(
+            document_id=page.document_id,
+            source_path=page.source_path,
+            page_index=page.page_index,
+            model_name=self.name,
+            model_revision="test",
+            processing_status=ProcessingStatus.NOT_AVAILABLE,
+            checkpoint="models/layoutlmv3-base",
+            recognized_region_count=len(regions),
+            encoded_token_count=len(regions) + 2,
+            hidden_size=768,
+            message="Raw base-model test output.",
+        )
+        return [], []
+
+    def raw_trace(self) -> PretrainedLayoutTrace | None:
+        return self._trace
+
+
+def test_raw_pretrained_layout_has_trace_but_no_invoice_json(tmp_path: Path) -> None:
+    input_dir = tmp_path / "data"
+    input_dir.mkdir()
+    Image.new("RGB", (400, 300), "white").save(input_dir / "synthetic_invoice.png")
+    output = tmp_path / "outputs" / "raw-base"
+    runner = PipelineRunner(
+        PipelineSelection("paddleocr", "vietocr", "layoutlmv3_pretrained"),
+        PipelineOptions(
+            input_path=input_dir,
+            output_path=output,
+            work_root=tmp_path / "work",
+            model_root=tmp_path / "models",
+            workflow_defaults=Path("configs/workflow_defaults/default.yaml"),
+            device="cpu",
+        ),
+        detector=MockDetector(tmp_path),
+        recognizer=MockRecognizer(tmp_path),
+        layout=MockRawLayout(tmp_path),
+    )
+    manifest = runner.run()
+    assert manifest.failed_document_count == 0
+    assert list((output / "predictions").glob("*.json")) == []
+    raw_records = (tmp_path / "work" / "raw-base" / "layout_raw.jsonl").read_text(encoding="utf-8")
+    assert "Raw base-model test output." in raw_records
