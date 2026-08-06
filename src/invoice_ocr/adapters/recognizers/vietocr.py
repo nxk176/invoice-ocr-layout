@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -54,6 +55,15 @@ class VietOCRRecognizer(RecognizerAdapter):
         self._create_predictor()
 
     @staticmethod
+    def _safe_confidence(value: Any) -> float:
+        """Keep invalid backend probabilities from corrupting the JSONL contract."""
+        try:
+            confidence = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return confidence if isfinite(confidence) and 0.0 <= confidence <= 1.0 else 0.0
+
+    @staticmethod
     def _crop(image: Image.Image, region: DetectionRegion) -> Image.Image:
         box = region.bbox
         return image.crop((box.x_min, box.y_min, box.x_max, box.y_max))
@@ -78,7 +88,7 @@ class VietOCRRecognizer(RecognizerAdapter):
                     polygon=region.polygon,
                     bbox=region.bbox,
                     text=str(text),
-                    confidence=float(confidence),
+                    confidence=self._safe_confidence(confidence),
                 )
             )
         return results

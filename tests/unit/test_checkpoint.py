@@ -36,3 +36,12 @@ def test_missing_checkpoint_has_actionable_error(
     adapter = VietOCRRecognizer(tmp_path)
     with pytest.raises(CheckpointUnavailableError, match="checkpoint not found"):
         adapter._create_predictor()
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -0.1, 1.1, "invalid"])
+def test_vietocr_invalid_confidence_is_zero(value: object) -> None:
+    assert VietOCRRecognizer._safe_confidence(value) == 0.0
+
+
+def test_vietocr_valid_confidence_is_preserved() -> None:
+    assert VietOCRRecognizer._safe_confidence(0.75) == 0.75
