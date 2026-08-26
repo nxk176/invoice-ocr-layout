@@ -106,6 +106,31 @@ _DATE_VIETNAMESE = re.compile(
 )
 
 
+_FIELD_VALUE_PREFIXES = {
+    "INVOICE_NUMBER": ("so hoa don", "so"),
+    "INVOICE_SERIAL": ("ky hieu hoa don", "ky hieu"),
+    "PAYMENT_METHOD": ("hinh thuc thanh toan",),
+    "SELLER_TAX_CODE": ("ma so thue",),
+    "BUYER_TAX_CODE": ("ma so thue",),
+    "SUBTOTAL": ("tong tien chua thue", "tong tien hang", "cong tien hang"),
+    "TOTAL_VAT_RATE": ("thue suat gtgt", "thue suat"),
+    "VAT_TOTAL": ("tien thue gtgt", "thue gtgt"),
+    "GRAND_TOTAL": ("tong cong tien thanh toan", "tong tien thanh toan"),
+    "AMOUNT_IN_WORDS": ("so tien viet bang chu",),
+    "EXPIRY_DATE": ("han su dung", "han dung"),
+}
+_DATE_VALUE_TEXT = re.compile(
+    r"^(?:\d{1,4}[./-]\d{1,2}[./-]\d{1,4}|"
+    r"ngay\s+\d{1,2}\s+thang\s+\d{1,2}\s+nam\s+\d{4})$",
+    re.IGNORECASE,
+)
+_NUMERIC_VALUE_TEXT = re.compile(
+    r"^[+-]?\s*\d+(?:[.\s]\d+)*\s*(?:%|vnd|d|dong)?$",
+    re.IGNORECASE,
+)
+_NUMERIC_SUFFIX = re.compile(r"\s*(?:%|vnd|d|dong)\s*$", re.IGNORECASE)
+
+
 @dataclass(frozen=True)
 class GroundTruthField:
     field_path: str
@@ -374,6 +399,42 @@ def normalize_text(value: str) -> str:
     return _WHITESPACE.sub(" ", normalized).strip(" .-'\"")
 
 
+def _fold_text(value: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", normalize_text(value))
+    without_marks = "".join(
+        character for character in decomposed if not unicodedata.combining(character)
+    )
+    return without_marks.replace("\u0111", "d")
+
+
+def _anchored_value(target: GroundTruthField, ocr: str) -> str | None:
+    folded_ocr = _fold_text(ocr)
+    for prefix in _FIELD_VALUE_PREFIXES.get(target.label, ()):
+        marker = f"{prefix} "
+        if folded_ocr.startswith(marker):
+            value = folded_ocr[len(marker) :].strip()
+            return value or None
+    return None
+
+
+def _numeric_candidate_text(target: GroundTruthField, ocr: str) -> str | None:
+    anchored = _anchored_value(target, ocr)
+    candidate = anchored if anchored is not None else _fold_text(ocr)
+    if not _NUMERIC_VALUE_TEXT.fullmatch(candidate):
+        return None
+    return _NUMERIC_SUFFIX.sub("", candidate).strip()
+
+
+def _date_candidate_text(target: GroundTruthField, ocr: str) -> str | None:
+    folded = _fold_text(ocr)
+    if _DATE_VALUE_TEXT.fullmatch(folded):
+        return ocr
+    anchored = _anchored_value(target, ocr)
+    if anchored is not None and _DATE_VALUE_TEXT.fullmatch(anchored):
+        return anchored
+    return None
+
+
 def _normalize_identifier(value: str) -> str:
     return _IDENTIFIER_PUNCTUATION.sub("", normalize_text(value))
 
@@ -432,6 +493,9 @@ def _candidate_match(
         return MatchCandidate(regions, f"{prefix}whitespace_normalized", 0.995)
     normalized_ocr = normalize_text(ocr)
     normalized_gt = normalize_text(gt)
+    anchored_ocr = _anchored_value(target, ocr)
+    if anchored_ocr is not None and anchored_ocr == _fold_text(gt):
+        return MatchCandidate(regions, f"{prefix}anchored_exact_normalized", 0.985)
     if normalized_ocr and normalized_ocr == normalized_gt:
         return MatchCandidate(regions, f"{prefix}exact_normalized", 0.99)
     if target.normalization_kind == "identifier":
@@ -440,7 +504,8 @@ def _candidate_match(
         if identifier_ocr and identifier_ocr == identifier_gt:
             return MatchCandidate(regions, f"{prefix}identifier_normalized", 0.98)
     if target.normalization_kind in {"number", "money"}:
-        number_ocr = _normalize_number(ocr)
+        number_source = _numeric_candidate_text(target, ocr)
+        number_ocr = _normalize_number(number_source) if number_source is not None else None
         number_gt = _normalize_number(gt)
         if number_ocr is not None and number_ocr == number_gt:
             method = (
@@ -448,7 +513,8 @@ def _candidate_match(
             )
             return MatchCandidate(regions, f"{prefix}{method}", 0.98)
     if target.normalization_kind == "date":
-        date_ocr = _normalize_date(ocr)
+        date_source = _date_candidate_text(target, ocr)
+        date_ocr = _normalize_date(date_source) if date_source is not None else None
         date_gt = _normalize_date(gt)
         if date_ocr is not None and date_ocr == date_gt:
             return MatchCandidate(regions, f"{prefix}date_normalized", 0.98)
@@ -475,6 +541,23 @@ def _candidate_match(
                 inherently_ambiguous=True,
             )
     return None
+
+
+def _prune_redundant_spans(
+    candidates: list[MatchCandidate],
+) -> list[MatchCandidate]:
+    region_sets = [{region.region_id for region in candidate.regions} for candidate in candidates]
+    result: list[MatchCandidate] = []
+    for index, candidate in enumerate(candidates):
+        redundant = any(
+            other_index != index
+            and region_sets[other_index] < region_sets[index]
+            and other.confidence >= candidate.confidence
+            for other_index, other in enumerate(candidates)
+        )
+        if not redundant:
+            result.append(candidate)
+    return result
 
 
 def _candidate_regions_for_field(
@@ -507,7 +590,7 @@ def _candidate_regions_for_field(
         existing = best_by_regions.get(key)
         if existing is None or candidate.confidence > existing.confidence:
             best_by_regions[key] = candidate
-    candidates = list(best_by_regions.values())
+    candidates = _prune_redundant_spans(list(best_by_regions.values()))
     strong = [candidate for candidate in candidates if not candidate.inherently_ambiguous]
     selected = strong if strong else candidates
     return sorted(
