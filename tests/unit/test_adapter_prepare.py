@@ -15,16 +15,31 @@ def test_paddle_adapters_prepare_and_cache_engine(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[dict[str, object]] = []
+    recognizer_calls: list[dict[str, object]] = []
+    detector_calls: list[SimpleNamespace] = []
 
-    def factory(**kwargs: object) -> object:
-        calls.append(kwargs)
+    def recognizer_factory(**kwargs: object) -> object:
+        recognizer_calls.append(kwargs)
+        return object()
+
+    def detector_factory(params: SimpleNamespace) -> object:
+        detector_calls.append(params)
         return object()
 
     monkeypatch.setitem(
         sys.modules,
         "paddleocr",
-        SimpleNamespace(PaddleOCR=factory),
+        SimpleNamespace(PaddleOCR=recognizer_factory),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "paddleocr.paddleocr",
+        SimpleNamespace(parse_args=lambda **_kwargs: SimpleNamespace()),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "tools.infer.predict_det",
+        SimpleNamespace(TextDetector=detector_factory),
     )
     detector_checkpoint = tmp_path / "paddleocr" / "detector"
     recognizer_checkpoint = tmp_path / "paddleocr" / "recognizer"
@@ -38,11 +53,23 @@ def test_paddle_adapters_prepare_and_cache_engine(
     detector.prepare()
     recognizer.prepare()
     recognizer.prepare()
-    assert len(calls) == 2
-    assert "det" not in calls[0]
-    assert calls[0]["det_model_dir"] == str(detector_checkpoint)
-    assert calls[1]["det"] is False
-    assert calls[1]["rec_model_dir"] == str(recognizer_checkpoint)
+    assert len(detector_calls) == 1
+    assert detector_calls[0].det is True
+    assert detector_calls[0].rec is False
+    assert detector_calls[0].det_model_dir == str(detector_checkpoint)
+    assert detector_calls[0].ir_optim is False
+    assert detector_calls[0].use_tensorrt is False
+    assert detector_calls[0].enable_mkldnn is False
+    assert recognizer_calls == [
+        {
+            "det": False,
+            "use_angle_cls": False,
+            "use_gpu": False,
+            "show_log": False,
+            "lang": "vi",
+            "rec_model_dir": str(recognizer_checkpoint),
+        }
+    ]
 
 
 def test_paddle_adapter_refuses_package_auto_download(

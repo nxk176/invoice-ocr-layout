@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Any
 
 from invoice_ocr.adapters.detectors.base import DetectorAdapter
@@ -35,21 +36,29 @@ class PaddleOCRDetector(DetectorAdapter):
         existing = getattr(self, "_engine", None)
         if existing is not None:
             return existing
+        checkpoint = self._resolve_checkpoint()
         try:
-            from paddleocr import PaddleOCR
-        except ImportError as exc:
+            # Importing the package module registers the top-level tools package.
+            paddleocr_module = importlib.import_module("paddleocr.paddleocr")
+            predict_det = importlib.import_module("tools.infer.predict_det")
+        except (ImportError, OSError) as exc:
             raise DependencyUnavailableError(
                 "PaddleOCR detector requires the 'paddleocr' package and a compatible "
                 "PaddlePaddle build. Install the paddleocr extra, then install paddlepaddle "
                 "or paddlepaddle-gpu following the official compatibility table."
             ) from exc
-        kwargs: dict[str, Any] = {
-            "use_angle_cls": False,
-            "use_gpu": self.device == "cuda",
-            "show_log": False,
-            "det_model_dir": str(self._resolve_checkpoint()),
-        }
-        self._engine = PaddleOCR(**kwargs)
+        params = paddleocr_module.parse_args(mMain=False)
+        params.det = True
+        params.rec = False
+        params.use_angle_cls = False
+        params.use_gpu = self.device == "cuda"
+        params.show_log = False
+        params.det_model_dir = str(checkpoint)
+        # The legacy inference optimizer can SIGILL in SelfAttentionFusePass.
+        params.ir_optim = False
+        params.use_tensorrt = False
+        params.enable_mkldnn = False
+        self._engine = predict_det.TextDetector(params)
         return self._engine
 
     def prepare(self) -> None:
@@ -57,8 +66,19 @@ class PaddleOCRDetector(DetectorAdapter):
 
     def detect(self, page: DocumentPage) -> list[DetectionRegion]:
         engine = self._create_engine()
-        raw_result = engine.ocr(page.image_path, det=True, rec=False, cls=False)
-        polygons = raw_result[0] if raw_result and raw_result[0] else []
+        try:
+            import numpy as np
+            from PIL import Image
+        except ImportError as exc:
+            raise DependencyUnavailableError(
+                "PaddleOCR detection requires NumPy and Pillow. Install the "
+                "paddleocr project extra."
+            ) from exc
+        with Image.open(page.image_path) as page_image:
+            rgb_image = np.asarray(page_image.convert("RGB"))
+        bgr_image = np.ascontiguousarray(rgb_image[:, :, ::-1])
+        raw_boxes, _elapsed = engine(bgr_image)
+        polygons = raw_boxes if raw_boxes is not None else []
         regions: list[DetectionRegion] = []
         for index, raw_polygon in enumerate(polygons):
             points = [Point(x=float(point[0]), y=float(point[1])) for point in raw_polygon]
