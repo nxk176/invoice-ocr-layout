@@ -15,7 +15,7 @@ from typing import Any
 
 from invoice_ocr.adapters.detectors import DETECTORS, DetectorAdapter
 from invoice_ocr.adapters.recognizers import RECOGNIZERS, RecognizerAdapter
-from invoice_ocr.contracts import DocumentPage, SourceDocument
+from invoice_ocr.contracts import DetectionRegion, DocumentPage, SourceDocument
 from invoice_ocr.exceptions import ConfigurationError, OutputExistsError
 from invoice_ocr.io.paths import discover_documents
 from invoice_ocr.io.pdf_render import render_document
@@ -33,6 +33,7 @@ from invoice_ocr.layout_gt.index import (
     final_gt_path,
     load_final_ground_truth_index,
 )
+from invoice_ocr.layout_gt.orientation import auto_orient_page
 from invoice_ocr.pipeline import resolve_device
 from invoice_ocr.training.datasets import validate_ground_truth
 
@@ -123,8 +124,9 @@ def _ocr_regions(
     page: DocumentPage,
     detector: DetectorAdapter,
     recognizer: RecognizerAdapter,
+    detections: list[DetectionRegion] | None = None,
 ) -> list[OCRRegion]:
-    detections = detector.detect(page)
+    detections = detections if detections is not None else detector.detect(page)
     detection_by_id = {region.region_id: region for region in detections}
     recognized = recognizer.recognize(page, detections)
     result: list[OCRRegion] = []
@@ -481,11 +483,24 @@ def build_layout_ground_truth(
         )
         try:
             pages = renderer(document, request.output_dir / "images" / document.document_id)
-            regions = [
-                region
-                for page in pages
-                for region in _ocr_regions(page, detector_instance, recognizer_instance)
-            ]
+            oriented_pages: list[DocumentPage] = []
+            regions: list[OCRRegion] = []
+            for page in pages:
+                oriented_page, detections = auto_orient_page(
+                    page,
+                    detector_instance,
+                    recognizer_instance,
+                )
+                oriented_pages.append(oriented_page)
+                regions.extend(
+                    _ocr_regions(
+                        oriented_page,
+                        detector_instance,
+                        recognizer_instance,
+                        detections,
+                    )
+                )
+            pages = oriented_pages
             gt_payload = _load_object(final_gt_path(index, target))
             fields = flatten_canonical_ground_truth(gt_payload)
             result = align_ground_truth_fields(
