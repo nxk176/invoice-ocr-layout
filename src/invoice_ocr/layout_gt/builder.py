@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import shutil
+import time
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -35,6 +37,7 @@ from invoice_ocr.pipeline import resolve_device
 from invoice_ocr.training.datasets import validate_ground_truth
 
 Renderer = Callable[[SourceDocument, Path], list[DocumentPage]]
+LOGGER = logging.getLogger("invoice_ocr")
 
 
 @dataclass(frozen=True)
@@ -418,6 +421,13 @@ def build_layout_ground_truth(
         raise ConfigurationError("max alignment boxes must be positive")
     _prepare_output(request.output_dir, request.force)
     index = _resolve_index(request)
+    total_documents = index.target_count
+    LOGGER.info(
+        "Starting pseudo-layout GT build: targets=%d detector=%s recognizer=%s",
+        total_documents,
+        request.detector_name,
+        request.recognizer_name,
+    )
     # Persist a local copy even when an external target manifest was supplied.
     _write_object(request.output_dir / "document_index.json", index.model_dump(mode="json"))
     documents = {
@@ -441,12 +451,22 @@ def build_layout_ground_truth(
         if recognizer_type is None:
             raise ConfigurationError(f"unsupported recognizer: {request.recognizer_name}")
         recognizer_instance = recognizer_type(request.model_root, device)
+    LOGGER.info("Preparing detector on %s: %s", device, request.detector_name)
     detector_instance.prepare()
+    LOGGER.info("Detector ready; preparing recognizer: %s", request.recognizer_name)
     recognizer_instance.prepare()
+    LOGGER.info("Recognizer ready; starting OCR and GT alignment")
     alignments: list[DocumentAlignment] = []
     errors: list[dict[str, str]] = []
-    for target in index.documents:
+    for position, target in enumerate(index.documents, start=1):
         document = documents[target.document_id]
+        started_at = time.perf_counter()
+        LOGGER.info(
+            "[%d/%d] Processing %s",
+            position,
+            total_documents,
+            document.relative_path,
+        )
         try:
             pages = renderer(document, request.output_dir / "images" / document.document_id)
             regions = [
@@ -485,6 +505,19 @@ def build_layout_ground_truth(
                     result=result,
                 )
             )
+            LOGGER.info(
+                "[%d/%d] Completed %s: pages=%d regions=%d matched=%d "
+                "unmatched=%d ambiguous=%d elapsed=%.1fs",
+                position,
+                total_documents,
+                document.relative_path,
+                len(pages),
+                len(regions),
+                len(result.matches),
+                len(result.unmatched),
+                sum(match.ambiguous for match in result.matches),
+                time.perf_counter() - started_at,
+            )
         except Exception as exc:
             errors.append(
                 {
@@ -492,6 +525,15 @@ def build_layout_ground_truth(
                     "source_relative_path": document.relative_path,
                     "reason": f"{type(exc).__name__}: {exc}",
                 }
+            )
+            LOGGER.error(
+                "[%d/%d] Failed %s after %.1fs: %s: %s",
+                position,
+                total_documents,
+                document.relative_path,
+                time.perf_counter() - started_at,
+                type(exc).__name__,
+                exc,
             )
     report = write_alignment_report(request.output_dir, alignments, index, errors)
     _write_object(
@@ -511,6 +553,17 @@ def build_layout_ground_truth(
             "alignment_summary": report["summary"],
             "detector_iou": report["detector_iou"],
         },
+    )
+    summary = report["summary"]
+    LOGGER.info(
+        "Pseudo-layout GT build completed: processed=%d failed=%d matched=%d/%d "
+        "coverage=%.2f%% output=%s",
+        summary["processed_documents"],
+        summary["failed_documents"],
+        summary["matched_fields"],
+        summary["total_gt_fields"],
+        summary["coverage_percent"],
+        request.output_dir,
     )
     return request.output_dir
 

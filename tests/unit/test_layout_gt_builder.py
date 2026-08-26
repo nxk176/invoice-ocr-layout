@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from invoice_ocr.adapters.detectors.base import DetectorAdapter
@@ -76,7 +78,9 @@ class SyntheticRecognizer(RecognizerAdapter):
 
 def test_builder_serializes_trainable_pseudo_layout_dataset_and_reports_na_iou(
     tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.INFO, logger="invoice_ocr")
     data = tmp_path / "data" / "t5"
     source = data / "synthetic-folder" / "invoice.png"
     source.parent.mkdir(parents=True)
@@ -126,3 +130,6 @@ def test_builder_serializes_trainable_pseudo_layout_dataset_and_reports_na_iou(
     inspected = inspect_layout_ground_truth(output)
     assert inspected["valid_layout_dataset"] is True
     assert inspected["layout_annotation_count"] == 1
+    assert "[1/1] Processing synthetic-folder/invoice.png" in caplog.text
+    assert "[1/1] Completed synthetic-folder/invoice.png" in caplog.text
+    assert "Pseudo-layout GT build completed" in caplog.text

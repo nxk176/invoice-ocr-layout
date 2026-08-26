@@ -600,6 +600,7 @@ def dispatch(args: argparse.Namespace) -> int:
             build_layout_ground_truth,
         )
 
+        configure_logging()
         build_layout_ground_truth(
             LayoutGTBuildRequest(
                 input_root=args.input,
