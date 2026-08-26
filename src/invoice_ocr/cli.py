@@ -156,6 +156,16 @@ def build_parser() -> argparse.ArgumentParser:
     build_layout_gt.add_argument("--gt", type=Path, required=True)
     build_layout_gt.add_argument("--detector", choices=DETECTOR_NAMES, required=True)
     build_layout_gt.add_argument("--recognizer", choices=RECOGNIZER_NAMES, required=True)
+    build_layout_gt.add_argument(
+        "--detector-device",
+        choices=("auto", "cpu", "cuda"),
+        help="override --device for the pretrained detector",
+    )
+    build_layout_gt.add_argument(
+        "--recognizer-device",
+        choices=("auto", "cpu", "cuda"),
+        help="override --device for the pretrained recognizer",
+    )
     build_layout_gt.add_argument("--output", type=Path, required=True)
     build_layout_gt.add_argument("--gt-prefix")
     build_layout_gt.add_argument("--target-manifest", type=Path)
@@ -610,6 +620,8 @@ def dispatch(args: argparse.Namespace) -> int:
                 recognizer_name=args.recognizer,
                 model_root=args.model_root,
                 device=args.device,
+                detector_device=args.detector_device,
+                recognizer_device=args.recognizer_device,
                 gt_prefix=args.gt_prefix,
                 target_manifest=args.target_manifest,
                 force=args.force,

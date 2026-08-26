@@ -49,6 +49,8 @@ class LayoutGTBuildRequest:
     recognizer_name: str = "vietocr"
     model_root: Path = Path("models")
     device: str = "auto"
+    detector_device: str | None = None
+    recognizer_device: str | None = None
     gt_prefix: str | None = None
     target_manifest: Path | None = None
     force: bool = False
@@ -438,22 +440,32 @@ def build_layout_ground_truth(
         raise ConfigurationError(
             f"target manifest references source documents absent from --input: {missing_documents}"
         )
-    device = resolve_device(request.device)
+    default_device = resolve_device(request.device)
+    detector_device = resolve_device(request.detector_device or default_device)
+    recognizer_device = resolve_device(request.recognizer_device or default_device)
     detector_instance = detector
     if detector_instance is None:
         detector_type = DETECTORS.get(request.detector_name)
         if detector_type is None:
             raise ConfigurationError(f"unsupported detector: {request.detector_name}")
-        detector_instance = detector_type(request.model_root, device)
+        detector_instance = detector_type(request.model_root, detector_device)
     recognizer_instance = recognizer
     if recognizer_instance is None:
         recognizer_type = RECOGNIZERS.get(request.recognizer_name)
         if recognizer_type is None:
             raise ConfigurationError(f"unsupported recognizer: {request.recognizer_name}")
-        recognizer_instance = recognizer_type(request.model_root, device)
-    LOGGER.info("Preparing detector on %s: %s", device, request.detector_name)
+        recognizer_instance = recognizer_type(request.model_root, recognizer_device)
+    LOGGER.info(
+        "Preparing detector on %s: %s",
+        detector_device,
+        request.detector_name,
+    )
     detector_instance.prepare()
-    LOGGER.info("Detector ready; preparing recognizer: %s", request.recognizer_name)
+    LOGGER.info(
+        "Detector ready; preparing recognizer on %s: %s",
+        recognizer_device,
+        request.recognizer_name,
+    )
     recognizer_instance.prepare()
     LOGGER.info("Recognizer ready; starting OCR and GT alignment")
     alignments: list[DocumentAlignment] = []
@@ -547,6 +559,8 @@ def build_layout_ground_truth(
             "gt_prefix": index.gt_prefix,
             "detector": request.detector_name,
             "recognizer": request.recognizer_name,
+            "detector_device": detector_device,
+            "recognizer_device": recognizer_device,
             "target_count": index.target_count,
             "layout_annotation_count": len(list((request.output_dir / "layout").glob("*.json"))),
             "failed_document_count": len(errors),

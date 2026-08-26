@@ -28,6 +28,32 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def test_build_layout_gt_cli_accepts_independent_ocr_devices() -> None:
+    args = build_parser().parse_args(
+        [
+            "build-layout-gt",
+            "--input",
+            "data/t5",
+            "--gt",
+            "GT",
+            "--detector",
+            "paddleocr",
+            "--recognizer",
+            "vietocr",
+            "--detector-device",
+            "cpu",
+            "--recognizer-device",
+            "cuda",
+            "--output",
+            "work/layout_gt/t5",
+        ]
+    )
+
+    assert args.device == "auto"
+    assert args.detector_device == "cpu"
+    assert args.recognizer_device == "cuda"
+
+
 def test_requested_layout_training_cli_can_derive_data_and_gt_from_layout_manifest() -> None:
     args = build_parser().parse_args(
         [

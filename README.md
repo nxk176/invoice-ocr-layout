@@ -748,6 +748,8 @@ python -m invoice_ocr.cli build-layout-gt \
   --gt GT \
   --detector paddleocr \
   --recognizer vietocr \
+  --detector-device cpu \
+  --recognizer-device cuda \
   --output work/layout_gt/t5
 
 python -m invoice_ocr.cli inspect-layout-gt \
