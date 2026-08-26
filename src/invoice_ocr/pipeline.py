@@ -150,19 +150,22 @@ def validate_canonical_payload(payload: dict[str, Any]) -> None:
 
 
 ITEM_LABEL_TO_COLUMN = {
-    "RAW_DESCRIPTION": 0,
-    "MEDICINE_NAME": 1,
-    "STRENGTH": 2,
-    "MANUFACTURER": 3,
-    "COUNTRY_OF_MANUFACTURE": 4,
-    "LOT_NUMBER": 5,
-    "EXPIRY_DATE": 6,
-    "UNIT": 7,
-    "QUANTITY": 8,
-    "UNIT_PRICE": 9,
-    "LINE_AMOUNT": 10,
-    "VAT_RATE": 11,
-    "VAT_AMOUNT": 12,
+    "LINE_NUMBER": 0,
+    "RAW_DESCRIPTION": 1,
+    "MEDICINE_NAME": 2,
+    "STRENGTH": 3,
+    "MANUFACTURER": 4,
+    "COUNTRY_OF_MANUFACTURE": 5,
+    "ITEM_BID_PACKAGE": 6,
+    "ITEM_CONTRACT_REFERENCE": 7,
+    "LOT_NUMBER": 8,
+    "EXPIRY_DATE": 9,
+    "UNIT": 10,
+    "QUANTITY": 11,
+    "UNIT_PRICE": 12,
+    "LINE_AMOUNT": 13,
+    "ITEM_VAT_RATE": 14,
+    "VAT_AMOUNT": 15,
 }
 
 

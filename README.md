@@ -717,3 +717,103 @@ python -m invoice_ocr.cli verify-models \
 Trước khi có data, LayoutLMv3 có thể `ready_for_training=true` nhờ base checkpoint nhưng
 `ready_for_inference=false` cho đến khi tạo `models/layoutlmv3/invoice-best`. Sau training, chạy
 lại command với `--require inference` để xác nhận toàn pipeline inference đã sẵn sàng.
+
+## 18. Tự sinh pseudo LayoutLM GT từ OCR pretrained
+
+Workflow này không yêu cầu annotate bbox thủ công. PaddleOCR detector sinh bbox, VietOCR sinh
+text, sau đó field-value GT hiện có được align tự động để tạo pseudo annotation. Bbox này có
+`source=pretrained_ocr_alignment`; nó không phải human GT và không được dùng để chấm detector.
+Khi không có `GT/detection`, detector IoU luôn là `N/A` kèm lý do.
+
+Tập final GT được định nghĩa bằng phép join tài liệu nguồn với JSON theo relative path. Nếu tên
+folder bị lệch encoding, index chỉ fallback bằng basename khi basename JSON là duy nhất. Vì vậy
+JSON gốc nằm cạnh JSON con được giữ nguyên nhưng không trở thành prediction target. Index runtime
+nằm tại `work/layout_gt/t5/document_index.json`.
+
+Tạo locked split chỉ từ các tài liệu có final GT:
+
+```bash
+python -m invoice_ocr.cli create-split \
+  --data data/t5 \
+  --gt GT \
+  --output GT/splits/t5_split_v1.json \
+  --seed 42
+```
+
+Sinh và kiểm tra pseudo-layout GT:
+
+```bash
+python -m invoice_ocr.cli build-layout-gt \
+  --input data/t5 \
+  --gt GT \
+  --detector paddleocr \
+  --recognizer vietocr \
+  --output work/layout_gt/t5
+
+python -m invoice_ocr.cli inspect-layout-gt \
+  --layout-gt work/layout_gt/t5
+```
+
+`alignment_report.json` và `alignment_report.csv` giữ đầy đủ matched, ambiguous và unmatched
+fields. Match fuzzy, duplicate hoặc không resolve chắc chắn vẫn có trong báo cáo với
+`ambiguous=true`, nhưng được gán `O` trong training dataset để không đưa label suy đoán vào
+model. Dataset dùng BIO ở mức OCR region, bbox integer chuẩn hóa về khoảng `0..1000`, và lưu
+image/page reference, document/page ID, token, confidence và source.
+
+Train linear probe và full fine-tune trên cùng label set/split:
+
+```bash
+python -m invoice_ocr.cli train \
+  --stage layout \
+  --model layoutlmv3 \
+  --layout-training-mode linear_probe \
+  --layout-gt work/layout_gt/t5 \
+  --split-manifest GT/splits/t5_split_v1.json \
+  --output models/finetuned/layoutlmv3_linear_probe
+
+python -m invoice_ocr.cli train \
+  --stage layout \
+  --model layoutlmv3 \
+  --layout-training-mode full_finetune \
+  --layout-gt work/layout_gt/t5 \
+  --split-manifest GT/splits/t5_split_v1.json \
+  --output models/finetuned/layoutlmv3_full_finetune
+```
+
+Linear probe khóa encoder và chỉ train invoice task head. Full fine-tune cập nhật cả encoder và
+cùng task head. Best checkpoint chỉ lấy từ validation; test annotation không được truyền vào
+training backend.
+
+Chạy end-to-end trên đúng locked test set cho hai checkpoint:
+
+```bash
+python -m invoice_ocr.cli experiment \
+  --pipeline paddleocr vietocr layoutlmv3 \
+  --layout-checkpoint models/finetuned/layoutlmv3_linear_probe/best \
+  --layout-checkpoint-mode linear_probe \
+  --data data/t5 \
+  --gt GT \
+  --split-manifest GT/splits/t5_split_v1.json \
+  --split test \
+  --output outputs/experiments/t5_linear_probe
+
+python -m invoice_ocr.cli experiment \
+  --pipeline paddleocr vietocr layoutlmv3 \
+  --layout-checkpoint models/finetuned/layoutlmv3_full_finetune/best \
+  --layout-checkpoint-mode full_finetune \
+  --data data/t5 \
+  --gt GT \
+  --split-manifest GT/splits/t5_split_v1.json \
+  --split test \
+  --output outputs/experiments/t5_full_finetune
+```
+
+Trong test inference, final GT value chỉ được đọc sau khi toàn bộ prediction đã sinh xong. So sánh
+hai run trên cùng test documents:
+
+```bash
+python -m invoice_ocr.cli compare-runs \
+  --before outputs/experiments/t5_linear_probe \
+  --after outputs/experiments/t5_full_finetune \
+  --output outputs/experiments/t5_comparison
+```

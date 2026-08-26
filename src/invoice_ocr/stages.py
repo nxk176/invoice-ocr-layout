@@ -20,6 +20,11 @@ from invoice_ocr.exceptions import ConfigurationError
 from invoice_ocr.io.jsonl import read_jsonl, write_jsonl
 from invoice_ocr.io.paths import discover_documents
 from invoice_ocr.io.pdf_render import render_document
+from invoice_ocr.layout_gt.index import (
+    build_final_ground_truth_index,
+    final_gt_path,
+    load_final_ground_truth_index,
+)
 from invoice_ocr.pipeline import (
     entities_to_table_cells,
     resolve_device,
@@ -135,12 +140,31 @@ def evaluate_prediction_directory(
     prediction_dir: Path,
     gt_root: Path,
     output_path: Path,
+    *,
+    data_root: Path | None = None,
+    gt_prefix: str | None = None,
+    target_manifest: Path | None = None,
 ) -> dict[str, object]:
     from invoice_ocr.evaluation.final_json import final_json_metrics
 
-    gt_final = gt_root / "final"
-    expected_paths = sorted(gt_final.rglob("*.json")) if gt_final.is_dir() else []
-    if not expected_paths:
+    indexed_targets: list[tuple[Path, Path]] = []
+    if target_manifest is not None:
+        index = load_final_ground_truth_index(target_manifest)
+        indexed_targets = [
+            (Path(target.prediction_relative_path), final_gt_path(index, target))
+            for target in index.documents
+        ]
+    elif data_root is not None:
+        index = build_final_ground_truth_index(data_root, gt_root, gt_prefix=gt_prefix)
+        indexed_targets = [
+            (Path(target.prediction_relative_path), final_gt_path(index, target))
+            for target in index.documents
+        ]
+    else:
+        gt_final = gt_root / "final"
+        expected_paths = sorted(gt_final.rglob("*.json")) if gt_final.is_dir() else []
+        indexed_targets = [(path.relative_to(gt_final), path) for path in expected_paths]
+    if not indexed_targets:
         metrics: dict[str, object] = {
             "final": {"status": "N/A", "reason": "GT/final annotations are missing"}
         }
@@ -148,8 +172,7 @@ def evaluate_prediction_directory(
         return metrics
     document_metrics = []
     missing = 0
-    for expected_path in expected_paths:
-        relative = expected_path.relative_to(gt_final)
+    for relative, expected_path in indexed_targets:
         predicted_path = prediction_dir / relative
         if not predicted_path.is_file():
             missing += 1
@@ -171,6 +194,7 @@ def evaluate_prediction_directory(
             "status": "available",
             "evaluated_documents": len(document_metrics),
             "missing_predictions": missing,
+            "target_documents": len(indexed_targets),
             **aggregate,
         }
     }

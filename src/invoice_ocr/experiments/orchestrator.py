@@ -39,6 +39,9 @@ class ExperimentRequest:
     data_root: Path
     gt_root: Path
     split_manifest: Path
+    layout_gt_root: Path | None = None
+    gt_prefix: str | None = None
+    target_manifest: Path | None = None
     pipeline: PipelineSelection | None = None
     all_combinations: bool = False
     protocol: str = "pretrained-vs-finetuned"
@@ -138,6 +141,7 @@ def _common_evaluation_request(
         model=model,
         checkpoint_source=checkpoint_source,
         checkpoint=checkpoint,
+        layout_gt_root=request.layout_gt_root,
         data_root=request.data_root,
         gt_root=request.gt_root,
         split_manifest=request.split_manifest,
@@ -187,6 +191,8 @@ def _common_pipeline_evaluation_request(
         validation_tolerance=request.validation_tolerance,
         baseline_mode=request.layout_baseline_mode if run_kind == "pretrained" else None,
         finetuned_mode=request.layout_finetuned_mode if run_kind == "finetuned" else None,
+        gt_prefix=request.gt_prefix,
+        target_manifest=request.target_manifest,
     )
 
 
@@ -205,6 +211,7 @@ def _common_training_request(
         gt_root=request.gt_root,
         split_manifest=request.split_manifest,
         output_dir=output_dir,
+        layout_gt_root=request.layout_gt_root,
         model_root=request.model_root,
         device=request.device,
         seed=request.seed,

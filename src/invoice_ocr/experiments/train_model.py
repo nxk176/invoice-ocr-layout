@@ -52,6 +52,7 @@ class LockedTrainingRequest:
     gt_root: Path
     split_manifest: Path
     output_dir: Path
+    layout_gt_root: Path | None = None
     model_root: Path = Path("models")
     device: str = "auto"
     seed: int = 42
@@ -272,10 +273,9 @@ class ProductionTrainingBackend:
         parameter_rows = list(model.named_parameters())
         train_pages = load_layout_pages(train_annotations)
         validation_pages = load_layout_pages(validation_annotations)
-        train_dataset = LayoutPageDataset(train_pages, processor, label_to_id, request.data_root)
-        validation_dataset = LayoutPageDataset(
-            validation_pages, processor, label_to_id, request.data_root
-        )
+        image_root = request.layout_gt_root or request.data_root
+        train_dataset = LayoutPageDataset(train_pages, processor, label_to_id, image_root)
+        validation_dataset = LayoutPageDataset(validation_pages, processor, label_to_id, image_root)
         backend_output = request.output_dir / "backend"
         metric_name, maximize = _selection_settings(request)
         fp16 = request.mixed_precision_mode == "fp16"
@@ -319,7 +319,9 @@ class ProductionTrainingBackend:
         )
         if best_source == backend_output:
             trainer.save_model(best_source)
-            processor.save_pretrained(best_source)
+        # Trainer checkpoints do not persist AutoProcessor unless explicitly attached.
+        # End-to-end LayoutLM inference needs the exact processor beside the selected model.
+        processor.save_pretrained(best_source)
         best_metric = trainer.state.best_metric
         if best_metric is None or not math.isfinite(float(best_metric)):
             raise RuntimeError(
@@ -403,6 +405,11 @@ def _training_config(
         "checkpoint_source": request.checkpoint_source,
         "layout_training_mode": (
             request.layout_training_mode if request.stage == "layout" else None
+        ),
+        "layout_gt_root": (
+            str(request.layout_gt_root)
+            if request.stage == "layout" and request.layout_gt_root is not None
+            else None
         ),
         "train_document_ids": train_ids,
         "validation_document_ids": validation_ids,
@@ -549,8 +556,13 @@ def train_model_locked(
             split.test_document_ids,
         )
     try:
+        annotation_root = (
+            request.layout_gt_root
+            if request.stage == "layout" and request.layout_gt_root is not None
+            else request.gt_root
+        )
         train_annotations, validation_annotations = partition_annotation_paths(
-            request.gt_root,
+            annotation_root,
             request.stage,
             set(split.train_document_ids),
             set(split.validation_document_ids),
@@ -568,7 +580,8 @@ def train_model_locked(
     )
     if missing_train or missing_validation:
         reason = (
-            f"missing {request.stage} annotations for locked train IDs {missing_train} "
+            f"missing {request.stage} annotations under {annotation_root} for locked train IDs "
+            f"{missing_train} "
             f"or validation IDs {missing_validation}; test annotations are never substituted"
         )
         return _write_skipped_training(

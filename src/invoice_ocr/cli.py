@@ -111,6 +111,8 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--all-combinations", action="store_true")
     benchmark.add_argument("--input", "--data", dest="input", type=Path, required=True)
     benchmark.add_argument("--gt", type=Path, required=True)
+    benchmark.add_argument("--gt-prefix")
+    benchmark.add_argument("--target-manifest", type=Path)
     benchmark.add_argument("--output", type=Path, required=True)
 
     detect = subparsers.add_parser("detect", help="run text detection stage")
@@ -140,15 +142,39 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(evaluate)
     evaluate.add_argument("--input", type=Path, required=True)
     evaluate.add_argument("--gt", type=Path, required=True)
+    evaluate.add_argument("--data", type=Path)
+    evaluate.add_argument("--gt-prefix")
+    evaluate.add_argument("--target-manifest", type=Path)
     evaluate.add_argument("--output", type=Path, required=True)
+
+    build_layout_gt = subparsers.add_parser(
+        "build-layout-gt",
+        help="align pretrained OCR text/boxes to canonical final field-value GT",
+    )
+    add_common_options(build_layout_gt)
+    build_layout_gt.add_argument("--input", type=Path, required=True)
+    build_layout_gt.add_argument("--gt", type=Path, required=True)
+    build_layout_gt.add_argument("--detector", choices=DETECTOR_NAMES, required=True)
+    build_layout_gt.add_argument("--recognizer", choices=RECOGNIZER_NAMES, required=True)
+    build_layout_gt.add_argument("--output", type=Path, required=True)
+    build_layout_gt.add_argument("--gt-prefix")
+    build_layout_gt.add_argument("--target-manifest", type=Path)
+    build_layout_gt.add_argument("--max-alignment-boxes", type=int, default=12)
+
+    inspect_layout_gt = subparsers.add_parser(
+        "inspect-layout-gt",
+        help="validate pseudo LayoutLM annotations and print alignment coverage",
+    )
+    inspect_layout_gt.add_argument("--layout-gt", type=Path, required=True)
 
     train = subparsers.add_parser("train", help="fine-tune one pipeline stage")
     add_common_options(train)
     add_locked_training_options(train)
     train.add_argument("--stage", choices=("detector", "recognizer", "layout"), required=True)
     train.add_argument("--model", required=True)
-    train.add_argument("--data", type=Path, required=True)
-    train.add_argument("--gt", type=Path, required=True)
+    train.add_argument("--data", type=Path)
+    train.add_argument("--gt", type=Path)
+    train.add_argument("--layout-gt", type=Path)
     train.add_argument("--output", type=Path, default=Path("outputs/training"))
 
     train_pipeline = subparsers.add_parser(
@@ -179,6 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_options(create_split)
     create_split.add_argument("--data", type=Path, required=True)
     create_split.add_argument("--gt", type=Path, required=True)
+    create_split.add_argument("--gt-prefix")
+    create_split.add_argument("--target-manifest", type=Path)
     create_split.add_argument("--output", type=Path, required=True)
 
     evaluate_model_parser = subparsers.add_parser(
@@ -198,6 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_model_parser.add_argument("--checkpoint", type=Path)
     evaluate_model_parser.add_argument("--data", type=Path, required=True)
     evaluate_model_parser.add_argument("--gt", type=Path, required=True)
+    evaluate_model_parser.add_argument("--layout-gt", type=Path)
     evaluate_model_parser.add_argument("--split-manifest", type=Path, required=True)
     evaluate_model_parser.add_argument(
         "--split",
@@ -246,6 +275,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     experiment.add_argument("--data", type=Path, required=True)
     experiment.add_argument("--gt", type=Path, required=True)
+    experiment.add_argument("--gt-prefix")
+    experiment.add_argument("--target-manifest", type=Path)
+    experiment.add_argument("--layout-gt", type=Path)
+    experiment.add_argument("--layout-checkpoint", type=Path)
+    experiment.add_argument(
+        "--layout-checkpoint-mode",
+        choices=("linear_probe", "full_finetune"),
+        default="full_finetune",
+    )
+    experiment.add_argument("--split", choices=("test",), default="test")
     experiment.add_argument("--split-manifest", type=Path)
     experiment.add_argument("--output", type=Path, required=True)
     experiment.add_argument("--warmup-iterations", type=int, default=0)
@@ -360,7 +399,14 @@ def _run_benchmark(args: argparse.Namespace) -> None:
             row["reason"] = str(exc)
             if args.fail_fast:
                 raise
-    write_benchmark_reports(args.output, rows, args.gt)
+    write_benchmark_reports(
+        args.output,
+        rows,
+        args.gt,
+        data_root=args.input,
+        gt_prefix=args.gt_prefix,
+        target_manifest=args.target_manifest,
+    )
 
 
 def _dispatch_locked_training(args: argparse.Namespace) -> None:
@@ -369,13 +415,33 @@ def _dispatch_locked_training(args: argparse.Namespace) -> None:
         train_model_locked,
     )
 
+    data_root = args.data
+    gt_root = args.gt
+    if args.layout_gt is not None:
+        if args.stage != "layout":
+            raise InvoiceOCRError("--layout-gt is only valid with --stage layout")
+        manifest_path = args.layout_gt / "manifest.json"
+        if not manifest_path.is_file():
+            raise InvoiceOCRError(
+                f"pseudo-layout manifest not found: {manifest_path}; run build-layout-gt first"
+            )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict):
+            raise InvoiceOCRError(f"invalid pseudo-layout manifest: {manifest_path}")
+        data_root = data_root or Path(str(manifest["input_root"]))
+        gt_root = gt_root or Path(str(manifest["gt_root"]))
+    if data_root is None or gt_root is None:
+        raise InvoiceOCRError(
+            "locked training requires --data and --gt, or --layout-gt whose manifest records both"
+        )
     train_model_locked(
         LockedTrainingRequest(
             stage=args.stage,
             model=args.model,
             checkpoint_source=args.checkpoint_source,
-            data_root=args.data,
-            gt_root=args.gt,
+            data_root=data_root,
+            gt_root=gt_root,
+            layout_gt_root=args.layout_gt,
             split_manifest=args.split_manifest,
             output_dir=args.output,
             model_root=args.model_root,
@@ -413,13 +479,68 @@ def _dispatch_experiment(args: argparse.Namespace) -> int:
     pipeline = None if args.all_combinations else selection_from_args(args)
     split_manifest = args.split_manifest or args.gt / "splits" / "split_v1.json"
     if not split_manifest.is_file():
-        create_locked_split(args.data, args.gt, split_manifest, args.seed, args.force)
+        create_locked_split(
+            args.data,
+            args.gt,
+            split_manifest,
+            args.seed,
+            args.force,
+            args.gt_prefix,
+            args.target_manifest,
+        )
+    if args.layout_checkpoint is not None:
+        if pipeline is None:
+            raise InvoiceOCRError("--layout-checkpoint requires one explicit --pipeline")
+        from invoice_ocr.experiments.evaluate_pipeline import (
+            PipelineEvaluationRequest,
+            evaluate_pipeline,
+        )
+
+        result = evaluate_pipeline(
+            PipelineEvaluationRequest(
+                pipeline=pipeline,
+                checkpoints={
+                    "detector": None,
+                    "recognizer": None,
+                    "layout": args.layout_checkpoint,
+                },
+                run_kind="finetuned",
+                data_root=args.data,
+                gt_root=args.gt,
+                split_manifest=split_manifest,
+                output_dir=args.output,
+                model_root=args.model_root,
+                work_root=args.work_root / args.output.name,
+                workflow_defaults=args.workflow_defaults,
+                device=args.device,
+                batch_size=args.batch_size,
+                num_workers=args.num_workers,
+                warmup_iterations=args.warmup_iterations,
+                seed=args.seed,
+                resume=args.resume,
+                force=args.force,
+                validation_tolerance=args.validation_tolerance,
+                baseline_mode=(
+                    "linear_probe" if args.layout_checkpoint_mode == "linear_probe" else None
+                ),
+                finetuned_mode=(
+                    "full_finetune" if args.layout_checkpoint_mode == "full_finetune" else None
+                ),
+                gt_prefix=args.gt_prefix,
+                target_manifest=args.target_manifest,
+            )
+        )
+        manifest = json.loads((result / "manifest.json").read_text(encoding="utf-8"))
+        return 0 if isinstance(manifest, dict) and manifest.get("status") == "success" else 1
     outcome = run_experiment(
         ExperimentRequest(
             output_dir=args.output,
             data_root=args.data,
             gt_root=args.gt,
             split_manifest=split_manifest,
+            layout_gt_root=args.layout_gt,
+            gt_prefix=args.gt_prefix,
+            target_manifest=args.target_manifest,
             pipeline=pipeline,
             all_combinations=args.all_combinations,
             protocol=args.protocol,
@@ -465,7 +586,45 @@ def dispatch(args: argparse.Namespace) -> int:
     elif args.command == "postprocess":
         run_postprocess_stage(args.input, args.output, args.workflow_defaults)
     elif args.command == "evaluate":
-        evaluate_prediction_directory(args.input, args.gt, args.output)
+        evaluate_prediction_directory(
+            args.input,
+            args.gt,
+            args.output,
+            data_root=args.data,
+            gt_prefix=args.gt_prefix,
+            target_manifest=args.target_manifest,
+        )
+    elif args.command == "build-layout-gt":
+        from invoice_ocr.layout_gt.builder import (
+            LayoutGTBuildRequest,
+            build_layout_ground_truth,
+        )
+
+        build_layout_ground_truth(
+            LayoutGTBuildRequest(
+                input_root=args.input,
+                gt_root=args.gt,
+                output_dir=args.output,
+                detector_name=args.detector,
+                recognizer_name=args.recognizer,
+                model_root=args.model_root,
+                device=args.device,
+                gt_prefix=args.gt_prefix,
+                target_manifest=args.target_manifest,
+                force=args.force,
+                max_alignment_boxes=args.max_alignment_boxes,
+            )
+        )
+    elif args.command == "inspect-layout-gt":
+        from invoice_ocr.layout_gt.builder import inspect_layout_ground_truth
+
+        print(
+            json.dumps(
+                inspect_layout_ground_truth(args.layout_gt),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     elif args.command == "validate-gt":
         report = validate_ground_truth(args.gt)
         text = json.dumps(report.as_dict(), ensure_ascii=False, indent=2)
@@ -478,7 +637,15 @@ def dispatch(args: argparse.Namespace) -> int:
     elif args.command == "create-split":
         from invoice_ocr.experiments.split import create_locked_split
 
-        manifest = create_locked_split(args.data, args.gt, args.output, args.seed, args.force)
+        manifest = create_locked_split(
+            args.data,
+            args.gt,
+            args.output,
+            args.seed,
+            args.force,
+            args.gt_prefix,
+            args.target_manifest,
+        )
         print(json.dumps(manifest.model_dump(mode="json"), ensure_ascii=False, indent=2))
     elif args.command == "evaluate-model":
         from invoice_ocr.experiments.evaluate_model import (
@@ -492,6 +659,7 @@ def dispatch(args: argparse.Namespace) -> int:
                 model=args.model,
                 checkpoint_source=args.checkpoint_source,
                 checkpoint=args.checkpoint,
+                layout_gt_root=args.layout_gt,
                 data_root=args.data,
                 gt_root=args.gt,
                 split_manifest=args.split_manifest,
@@ -535,6 +703,10 @@ def dispatch(args: argparse.Namespace) -> int:
         if args.split_manifest is not None:
             _dispatch_locked_training(args)
         else:
+            if args.layout_gt is not None:
+                raise InvoiceOCRError("--layout-gt training requires --split-manifest")
+            if args.data is None or args.gt is None:
+                raise InvoiceOCRError("training requires --data and --gt")
             run_training(
                 TrainingRequest(
                     stage=args.stage,

@@ -36,6 +36,39 @@ def test_final_json_metrics_normalize_only_string_whitespace() -> None:
     assert metric["document_exact_match"] == 0
 
 
+def test_final_json_metrics_ignore_review_metadata_and_match_reordered_item_rows() -> None:
+    expected = {
+        "document_type": "VAT_INVOICE_BATCH",
+        "invoice_count": 1,
+        "invoices": [
+            {
+                "items": [
+                    {"line_number": 1, "medicine_name": "Synthetic A", "quantity": 2},
+                    {"line_number": 2, "medicine_name": "Synthetic B", "quantity": 3},
+                ]
+            }
+        ],
+        "_review": {"synthetic": True},
+    }
+    predicted = {
+        "document_type": "VAT_INVOICE_BATCH",
+        "invoice_count": 1,
+        "invoices": [
+            {
+                "items": [
+                    {"line_number": 2, "medicine_name": "Synthetic B", "quantity": 3},
+                    {"line_number": 1, "medicine_name": "Synthetic A", "quantity": 2},
+                ]
+            }
+        ],
+    }
+    metric = final_json_metrics(predicted, expected)
+    assert metric["item_row_precision"] == 1.0
+    assert metric["item_row_recall"] == 1.0
+    assert metric["item_row_f1"] == 1.0
+    assert metric["item_field_accuracy"] == 1.0
+
+
 def test_benchmark_writes_all_required_reports_with_na_reasons(tmp_path: Path) -> None:
     output = tmp_path / "benchmark"
     gt = tmp_path / "GT"

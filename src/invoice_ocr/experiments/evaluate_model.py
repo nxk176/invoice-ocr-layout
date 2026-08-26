@@ -60,6 +60,7 @@ class ModelEvaluationRequest:
     split_manifest: Path
     output_dir: Path
     checkpoint: Path | None = None
+    layout_gt_root: Path | None = None
     split: SplitName = "test"
     model_root: Path = Path("models")
     work_root: Path = Path("work")
@@ -804,7 +805,12 @@ def evaluate_model(request: ModelEvaluationRequest) -> Path:
     timer.start()
     try:
         _layout_pretrained_guard(request)
-        annotations = _annotation_paths(request.gt_root, request.stage, selected_set)
+        annotation_root = (
+            request.layout_gt_root
+            if request.stage == "layout" and request.layout_gt_root is not None
+            else request.gt_root
+        )
+        annotations = _annotation_paths(annotation_root, request.stage, selected_set)
         with timer.stage("model_load"):
             adapter = _stage_adapter(request, device)
             adapter.prepare()

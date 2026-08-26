@@ -128,7 +128,9 @@ def entities_to_invoice(
         ),
         totals=InvoiceTotals(
             subtotal_excluding_vat=parse_money(values.get("SUBTOTAL")),
-            vat_rate_percent=parse_vietnamese_number(values.get("VAT_RATE")),
+            vat_rate_percent=parse_vietnamese_number(
+                values.get("TOTAL_VAT_RATE") or values.get("VAT_RATE")
+            ),
             vat_total=parse_money(values.get("VAT_TOTAL")),
             grand_total=parse_money(values.get("GRAND_TOTAL")),
             amount_in_words=values.get("AMOUNT_IN_WORDS"),

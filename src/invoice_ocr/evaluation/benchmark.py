@@ -50,11 +50,23 @@ def write_benchmark_reports(
     output_dir: Path,
     rows: list[dict[str, Any]],
     gt_root: Path,
+    *,
+    data_root: Path | None = None,
+    gt_prefix: str | None = None,
+    target_manifest: Path | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     for row in rows:
         run_name = f"{row['detector']}__{row['recognizer']}__{row['layout']}"
-        row.update(evaluate_run(output_dir / run_name, gt_root))
+        row.update(
+            evaluate_run(
+                output_dir / run_name,
+                gt_root,
+                data_root,
+                gt_prefix,
+                target_manifest,
+            )
+        )
     availability = stage_metric_availability(gt_root)
     metrics = {
         "pipeline_count": len(rows),

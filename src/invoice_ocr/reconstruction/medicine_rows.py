@@ -12,8 +12,8 @@ STRING_LABELS = {
     "STRENGTH": "strength",
     "MANUFACTURER": "manufacturer",
     "COUNTRY_OF_MANUFACTURE": "country_of_manufacture",
-    "BID_PACKAGE": "bid_package_name",
-    "CONTRACT_REFERENCE": "contract_reference",
+    "ITEM_BID_PACKAGE": "bid_package_name",
+    "ITEM_CONTRACT_REFERENCE": "contract_reference",
     "LOT_NUMBER": "lot_number",
     "UNIT": "unit",
 }
@@ -21,7 +21,7 @@ NUMBER_LABELS = {
     "QUANTITY": "quantity",
     "UNIT_PRICE": "unit_price",
     "LINE_AMOUNT": "line_amount",
-    "VAT_RATE": "vat_rate_percent",
+    "ITEM_VAT_RATE": "vat_rate_percent",
     "VAT_AMOUNT": "vat_amount",
 }
 

@@ -10,6 +10,10 @@ from typing import Any
 from invoice_ocr.experiments.contracts import LockedSplitManifest
 from invoice_ocr.experiments.hashing import canonical_json_hash, directory_manifest_hash
 from invoice_ocr.io.paths import discover_documents
+from invoice_ocr.layout_gt.index import (
+    build_final_ground_truth_index,
+    load_final_ground_truth_index,
+)
 
 
 def _partition_document_ids(
@@ -46,6 +50,8 @@ def create_locked_split(
     output_path: Path,
     seed: int,
     force: bool = False,
+    gt_prefix: str | None = None,
+    target_manifest: Path | None = None,
 ) -> LockedSplitManifest:
     if output_path.exists() and not force:
         existing = load_locked_split(output_path)
@@ -55,7 +61,25 @@ def create_locked_split(
                 "only when intentionally creating a new protocol"
             )
         return existing
-    documents = discover_documents(data_root)
+    all_documents = discover_documents(data_root)
+    target_index = None
+    if target_manifest is not None:
+        target_index = load_final_ground_truth_index(target_manifest)
+    elif (gt_root.expanduser().resolve() / "final").is_dir():
+        target_index = build_final_ground_truth_index(
+            data_root,
+            gt_root,
+            gt_prefix=gt_prefix,
+        )
+    target_ids = set(target_index.by_document_id()) if target_index is not None else None
+    documents = [
+        document
+        for document in all_documents
+        if target_ids is None or document.document_id in target_ids
+    ]
+    if target_ids is not None and {document.document_id for document in documents} != target_ids:
+        missing = sorted(target_ids - {document.document_id for document in documents})
+        raise ValueError(f"final GT target documents are absent from data: {missing}")
     train_ids, validation_ids, test_ids = _partition_document_ids(
         [document.document_id for document in documents], seed
     )
@@ -81,6 +105,13 @@ def create_locked_split(
             "pages_stay_together": True,
             "strategy": "sha256_seeded_order",
             "ratios": {"train": 0.8, "validation": 0.1, "test": 0.1},
+            "target_selection": (
+                "canonical_final_gt_index" if target_index is not None else "all_source_documents"
+            ),
+            "final_target_count": (target_index.target_count if target_index is not None else None),
+            "unmatched_source_count": (
+                target_index.unmatched_source_count if target_index is not None else 0
+            ),
         },
         "dataset_documents": dataset_documents,
     }
@@ -112,14 +143,20 @@ def load_locked_split(path: Path) -> LockedSplitManifest:
 def assert_locked_dataset_matches(
     manifest: LockedSplitManifest, data_root: Path, gt_root: Path
 ) -> None:
-    documents = discover_documents(data_root)
+    documents = {document.document_id: document for document in discover_documents(data_root)}
+    expected_ids = [str(item["document_id"]) for item in manifest.dataset_documents]
+    missing = sorted(set(expected_ids) - set(documents))
+    if missing:
+        raise ValueError(
+            f"locked source documents are absent or changed in the current dataset: {missing}"
+        )
     current_dataset = [
         {
-            "document_id": document.document_id,
-            "relative_path": document.relative_path,
-            "sha256": document.sha256,
+            "document_id": documents[document_id].document_id,
+            "relative_path": documents[document_id].relative_path,
+            "sha256": documents[document_id].sha256,
         }
-        for document in documents
+        for document_id in expected_ids
     ]
     current_dataset_hash = canonical_json_hash(current_dataset)
     if current_dataset_hash != manifest.dataset_manifest_hash:

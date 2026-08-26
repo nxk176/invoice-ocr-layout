@@ -267,6 +267,10 @@ def compare_runs(
                 )
     before_checkpoint = before_manifest.get("checkpoint", {})
     after_checkpoint = after_manifest.get("checkpoint", {})
+    layout_mode_comparison = (
+        before_manifest.get("baseline_mode") == "linear_probe"
+        and after_manifest.get("finetuned_mode") == "full_finetune"
+    )
     comparison: dict[str, Any] = {
         "experiment_id": after_manifest.get("experiment_id"),
         "stage": after_manifest.get("stage"),
@@ -275,6 +279,16 @@ def compare_runs(
         ),
         "baseline_mode": before_manifest.get("baseline_mode"),
         "finetuned_mode": after_manifest.get("finetuned_mode"),
+        "comparison_kind": (
+            "linear_probe_vs_full_finetune" if layout_mode_comparison else "pretrained_vs_finetuned"
+        ),
+        "baseline_checkpoint": {
+            "path": before_checkpoint.get("path"),
+            "identifier": before_checkpoint.get("identifier"),
+            "revision": before_checkpoint.get("revision"),
+            "sha256": before_checkpoint.get("sha256"),
+            "best_epoch": before_checkpoint.get("best_epoch"),
+        },
         "pretrained_checkpoint": {
             "identifier": before_checkpoint.get("identifier"),
             "revision": before_checkpoint.get("revision"),
@@ -428,7 +442,11 @@ def compare_runs(
     else:
         quality_conclusion = "fine-tuning did not improve the measured quality metrics"
     summary = [
-        "# Pretrained vs fine-tuned",
+        (
+            "# Linear probe vs full fine-tune"
+            if layout_mode_comparison
+            else "# Pretrained vs fine-tuned"
+        ),
         "",
         f"- Fair comparison: {'yes' if fair else 'no'}",
         f"- Same locked test split: {'yes' if comparison['same_test_split'] else 'no'}",

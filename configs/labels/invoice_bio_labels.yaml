@@ -1,6 +1,8 @@
 scheme: BIO
 labels:
   - O
+  - STATUS
+  - INVOICE_TYPE
   - SUPPLIER_NAME
   - SELLER_TAX_CODE
   - SELLER_ADDRESS
@@ -19,20 +21,24 @@ labels:
   - BID_PACKAGE
   - DELIVERY_UNIT
   - RECEIVER_NAME
+  - LINE_NUMBER
   - RAW_DESCRIPTION
   - MEDICINE_NAME
   - STRENGTH
   - MANUFACTURER
   - COUNTRY_OF_MANUFACTURE
+  - ITEM_BID_PACKAGE
+  - ITEM_CONTRACT_REFERENCE
   - LOT_NUMBER
   - EXPIRY_DATE
   - UNIT
   - QUANTITY
   - UNIT_PRICE
   - LINE_AMOUNT
-  - VAT_RATE
+  - ITEM_VAT_RATE
   - VAT_AMOUNT
   - SUBTOTAL
+  - TOTAL_VAT_RATE
   - VAT_TOTAL
   - GRAND_TOTAL
   - AMOUNT_IN_WORDS
@@ -43,4 +49,3 @@ notes:
   - Every non-O semantic label expands to B-<LABEL> and I-<LABEL>.
   - Table row and cell membership is stored separately in GT/tables.
   - Token boxes use the integer 0..1000 LayoutLM coordinate space.
-

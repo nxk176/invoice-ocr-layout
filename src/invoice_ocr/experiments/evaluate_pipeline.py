@@ -18,6 +18,7 @@ from invoice_ocr.adapters.layout import LAYOUT_ADAPTERS
 from invoice_ocr.adapters.recognizers import RECOGNIZERS
 from invoice_ocr.contracts import DocumentError, InvoiceBatch
 from invoice_ocr.evaluation.final_json import (
+    canonical_payload_view,
     final_json_metrics,
     flatten_json,
     normalize_scalar,
@@ -33,6 +34,12 @@ from invoice_ocr.experiments.runtime import EvaluationTimer
 from invoice_ocr.experiments.split import assert_locked_dataset_matches, load_locked_split
 from invoice_ocr.io.paths import discover_documents, prediction_relative_path
 from invoice_ocr.io.pdf_render import render_document
+from invoice_ocr.layout_gt.index import (
+    FinalGroundTruthIndex,
+    build_final_ground_truth_index,
+    final_gt_path,
+    load_final_ground_truth_index,
+)
 from invoice_ocr.model_manifest import load_adapter_manifest
 from invoice_ocr.pipeline import (
     PipelineSelection,
@@ -73,6 +80,8 @@ class PipelineEvaluationRequest:
     validation_tolerance: str = "0.01"
     baseline_mode: str | None = None
     finetuned_mode: str | None = None
+    gt_prefix: str | None = None
+    target_manifest: Path | None = None
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -132,8 +141,17 @@ def _resume_complete(output_dir: Path) -> bool:
     return _load_object(output_dir / "manifest.json").get("status") == "success"
 
 
-def _final_gt_path(gt_root: Path, relative_path: str) -> Path:
-    return gt_root / "final" / Path(relative_path).with_suffix(".json")
+def _target_index(request: PipelineEvaluationRequest) -> FinalGroundTruthIndex:
+    if request.target_manifest is not None:
+        index = load_final_ground_truth_index(request.target_manifest)
+        if Path(index.data_root).resolve() != request.data_root.expanduser().resolve():
+            raise ValueError("target manifest data_root differs from pipeline --data")
+        return index
+    return build_final_ground_truth_index(
+        request.data_root,
+        request.gt_root,
+        gt_prefix=request.gt_prefix,
+    )
 
 
 def _final_na_metrics(reason: str, skipped: int) -> dict[str, Any]:
@@ -143,6 +161,10 @@ def _final_na_metrics(reason: str, skipped: int) -> dict[str, Any]:
             ("final_field_exact_match", False),
             ("final_normalized_field_accuracy", False),
             ("final_medicine_row_matching", False),
+            ("final_item_row_precision", False),
+            ("final_item_row_recall", False),
+            ("final_item_row_f1", False),
+            ("final_item_field_accuracy", False),
             ("final_document_exact_match", False),
         )
     }
@@ -169,8 +191,8 @@ def _aggregate_final(
         renamed = {f"final_{name}": value for name, value in document_metrics.items()}
         rows.append(renamed)
         per_document[document_id] = renamed
-        predicted_fields = flatten_json(predicted)
-        expected_fields = flatten_json(expected)
+        predicted_fields = flatten_json(canonical_payload_view(predicted))
+        expected_fields = flatten_json(canonical_payload_view(expected))
         for field, expected_value in expected_fields.items():
             field_counts[field][1] += 1
             field_counts[field][0] += normalize_scalar(
@@ -182,6 +204,10 @@ def _aggregate_final(
         "final_field_exact_match",
         "final_normalized_field_accuracy",
         "final_medicine_row_matching",
+        "final_item_row_precision",
+        "final_item_row_recall",
+        "final_item_row_f1",
+        "final_item_field_accuracy",
         "final_document_exact_match",
     ):
         values = [row[name] for row in rows]
@@ -286,6 +312,17 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
     if {document.document_id for document in documents} != test_ids:
         raise ValueError("one or more locked test documents are absent from data")
     request.output_dir.mkdir(parents=True, exist_ok=True)
+    target_index = _target_index(request)
+    _write_object(
+        request.output_dir / "target_index.json",
+        target_index.model_dump(mode="json"),
+    )
+    targets_by_document = target_index.by_document_id()
+    missing_targets = sorted(test_ids - set(targets_by_document))
+    if missing_targets:
+        raise ValueError(
+            f"final GT target index does not contain locked test documents: {missing_targets}"
+        )
     predictions_dir = request.output_dir / "predictions"
     predictions_dir.mkdir(parents=True, exist_ok=True)
     device = resolve_device(request.device)
@@ -364,9 +401,6 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                 predictions[document.document_id] = payload
                 prediction_path = predictions_dir / prediction_relative_path(document.relative_path)
                 _write_object(prediction_path, payload)
-                gt_path = _final_gt_path(request.gt_root, document.relative_path)
-                if gt_path.is_file():
-                    expected[document.document_id] = _load_object(gt_path)
             except Exception as exc:
                 failed += 1
                 error = DocumentError(
@@ -379,6 +413,10 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                 )
                 errors.append(error.model_dump(mode="json"))
     with timer.stage("evaluation"):
+        # Canonical GT values are first loaded only after every test prediction is finalized.
+        for document in documents:
+            target = targets_by_document[document.document_id]
+            expected[document.document_id] = _load_object(final_gt_path(target_index, target))
         final_metrics, per_document, per_field = _aggregate_final(
             predictions,
             expected,
@@ -454,6 +492,11 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
             "identifier": "pipeline",
             "revision": canonical_json_hash(checkpoints),
             "sha256": canonical_json_hash(checkpoints),
+            "path": (
+                str(request.checkpoints.get("layout"))
+                if request.checkpoints.get("layout") is not None
+                else None
+            ),
             "components": checkpoints,
         },
         "split_manifest_hash": split.split_manifest_hash,

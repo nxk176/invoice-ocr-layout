@@ -13,6 +13,11 @@ from invoice_ocr.evaluation.final_json import final_json_metrics
 from invoice_ocr.evaluation.layout import set_metrics
 from invoice_ocr.evaluation.recognition import recognition_metrics
 from invoice_ocr.io.jsonl import read_jsonl
+from invoice_ocr.layout_gt.index import (
+    build_final_ground_truth_index,
+    final_gt_path,
+    load_final_ground_truth_index,
+)
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -168,17 +173,38 @@ def _evaluate_layout(run_dir: Path, gt_root: Path) -> dict[str, Any]:
     return result
 
 
-def _evaluate_final(run_dir: Path, gt_root: Path) -> dict[str, Any]:
-    gt_final = gt_root / "final"
-    paths = sorted(gt_final.rglob("*.json")) if gt_final.is_dir() else []
-    if not paths:
+def _evaluate_final(
+    run_dir: Path,
+    gt_root: Path,
+    data_root: Path | None = None,
+    gt_prefix: str | None = None,
+    target_manifest: Path | None = None,
+) -> dict[str, Any]:
+    indexed_targets: list[tuple[Path, Path]] = []
+    if target_manifest is not None:
+        index = load_final_ground_truth_index(target_manifest)
+        indexed_targets = [
+            (Path(target.prediction_relative_path), final_gt_path(index, target))
+            for target in index.documents
+        ]
+    elif data_root is not None:
+        index = build_final_ground_truth_index(data_root, gt_root, gt_prefix=gt_prefix)
+        indexed_targets = [
+            (Path(target.prediction_relative_path), final_gt_path(index, target))
+            for target in index.documents
+        ]
+    else:
+        gt_final = gt_root / "final"
+        paths = sorted(gt_final.rglob("*.json")) if gt_final.is_dir() else []
+        indexed_targets = [(path.relative_to(gt_final), path) for path in paths]
+    if not indexed_targets:
         return {"final_status": "N/A", "final_reason": "GT/final missing"}
     rows = []
     validation_checks = 0
     validation_successes = 0
     missing = 0
-    for path in paths:
-        prediction = run_dir / "predictions" / path.relative_to(gt_final)
+    for relative, path in indexed_targets:
+        prediction = run_dir / "predictions" / relative
         if not prediction.is_file():
             missing += 1
             continue
@@ -196,6 +222,7 @@ def _evaluate_final(run_dir: Path, gt_root: Path) -> dict[str, Any]:
                     validation_successes += validation.get(field) is True
     result: dict[str, Any] = {
         "final_status": "available",
+        "final_target_documents": len(indexed_targets),
         "final_missing_predictions": missing,
         **_average(rows),
     }
@@ -205,13 +232,18 @@ def _evaluate_final(run_dir: Path, gt_root: Path) -> dict[str, Any]:
     return result
 
 
-def evaluate_run(run_dir: Path, gt_root: Path) -> dict[str, Any]:
+def evaluate_run(
+    run_dir: Path,
+    gt_root: Path,
+    data_root: Path | None = None,
+    gt_prefix: str | None = None,
+    target_manifest: Path | None = None,
+) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for evaluator in (
         _evaluate_detection,
         _evaluate_recognition,
         _evaluate_layout,
-        _evaluate_final,
     ):
         try:
             result.update(evaluator(run_dir, gt_root))
@@ -219,6 +251,11 @@ def evaluate_run(run_dir: Path, gt_root: Path) -> dict[str, Any]:
             stage = evaluator.__name__.removeprefix("_evaluate_")
             result[f"{stage}_status"] = "N/A"
             result[f"{stage}_reason"] = f"evaluation failed: {exc}"
+    try:
+        result.update(_evaluate_final(run_dir, gt_root, data_root, gt_prefix, target_manifest))
+    except (OSError, ValueError, KeyError) as exc:
+        result["final_status"] = "N/A"
+        result["final_reason"] = f"evaluation failed: {exc}"
     metrics_path = run_dir / "metrics.json"
     if metrics_path.is_file():
         runtime = _load_object(metrics_path)
