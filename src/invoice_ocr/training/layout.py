@@ -3,13 +3,49 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 import yaml
 
 from invoice_ocr.exceptions import CheckpointUnavailableError, DependencyUnavailableError
 from invoice_ocr.training.datasets import align_word_labels, load_layout_pages
+
+
+class LayoutTrainerProgressArguments(TypedDict):
+    """Progress settings passed directly to Transformers TrainingArguments."""
+
+    disable_tqdm: bool
+    logging_strategy: str
+    logging_steps: int
+    logging_first_step: bool
+
+
+def layout_trainer_progress_arguments(
+    training_samples: int,
+    per_device_train_batch_size: int,
+    gradient_accumulation_steps: int,
+    target_logs_per_epoch: int = 20,
+) -> LayoutTrainerProgressArguments:
+    """Return deterministic step logging settings for a live progress bar."""
+    values = (
+        ("training_samples", training_samples),
+        ("per_device_train_batch_size", per_device_train_batch_size),
+        ("gradient_accumulation_steps", gradient_accumulation_steps),
+        ("target_logs_per_epoch", target_logs_per_epoch),
+    )
+    invalid = [name for name, value in values if value <= 0]
+    if invalid:
+        raise ValueError(f"layout training progress values must be positive: {invalid}")
+    batches_per_epoch = math.ceil(training_samples / per_device_train_batch_size)
+    optimizer_steps = math.ceil(batches_per_epoch / gradient_accumulation_steps)
+    return {
+        "disable_tqdm": False,
+        "logging_strategy": "steps",
+        "logging_steps": max(1, math.ceil(optimizer_steps / target_logs_per_epoch)),
+        "logging_first_step": True,
+    }
 
 
 def load_bio_label_mapping(path: Path) -> tuple[list[str], dict[str, int]]:
@@ -108,10 +144,19 @@ def train_layoutlmv3(
     pages = load_layout_pages(annotation_paths)
     dataset = LayoutPageDataset(pages, processor, label_to_id, data_root)
     output_dir.mkdir(parents=True, exist_ok=True)
+    per_device_train_batch_size = 8
+    gradient_accumulation_steps = 1
     arguments = TrainingArguments(
         output_dir=str(output_dir),
         seed=seed,
         data_seed=seed,
+        per_device_train_batch_size=per_device_train_batch_size,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        **layout_trainer_progress_arguments(
+            len(dataset),
+            per_device_train_batch_size,
+            gradient_accumulation_steps,
+        ),
         save_strategy="steps",
         evaluation_strategy="no",
         load_best_model_at_end=False,

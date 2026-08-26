@@ -39,7 +39,11 @@ from invoice_ocr.model_manifest import load_adapter_manifest
 from invoice_ocr.pipeline import resolve_device
 from invoice_ocr.training.datasets import load_layout_pages
 from invoice_ocr.training.detector import train_detector
-from invoice_ocr.training.layout import LayoutPageDataset, load_bio_label_mapping
+from invoice_ocr.training.layout import (
+    LayoutPageDataset,
+    layout_trainer_progress_arguments,
+    load_bio_label_mapping,
+)
 from invoice_ocr.training.recognizer import train_recognizer
 
 
@@ -302,6 +306,11 @@ class ProductionTrainingBackend:
             remove_unused_columns=False,
             fp16=fp16,
             bf16=bf16,
+            **layout_trainer_progress_arguments(
+                len(train_dataset),
+                request.batch_size,
+                request.gradient_accumulation_steps,
+            ),
             use_cpu=device == "cpu",
         )
         trainer = Trainer(
