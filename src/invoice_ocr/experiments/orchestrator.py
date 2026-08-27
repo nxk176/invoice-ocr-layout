@@ -291,6 +291,13 @@ def _write_failed_pipeline(
     metric_names = (
         "final_field_exact_match",
         "final_normalized_field_accuracy",
+        "final_field_level_precision",
+        "final_field_level_recall",
+        "final_field_level_f1",
+        "final_normalized_field_level_precision",
+        "final_normalized_field_level_recall",
+        "final_normalized_field_level_f1",
+        "final_character_error_rate",
         "final_medicine_row_matching",
         "final_document_exact_match",
         "validation_success_rate",
@@ -304,7 +311,8 @@ def _write_failed_pipeline(
             "denominator": None,
             "evaluated_sample_count": 0,
             "skipped_sample_count": len(test_ids),
-            "lower_is_better": name == "unresolved_required_field_count",
+            "lower_is_better": name
+            in {"final_character_error_rate", "unresolved_required_field_count"},
             "na_reason": reason,
         }
         for name in metric_names

@@ -19,9 +19,12 @@ from invoice_ocr.adapters.recognizers import RECOGNIZERS
 from invoice_ocr.contracts import DocumentError, InvoiceBatch
 from invoice_ocr.evaluation.final_json import (
     canonical_payload_view,
+    field_character_error_counts,
+    field_level_counts,
     final_json_metrics,
     flatten_json,
     normalize_scalar,
+    precision_recall_f1_from_counts,
 )
 from invoice_ocr.experiments.contracts import AggregateMetric
 from invoice_ocr.experiments.hashing import (
@@ -160,6 +163,13 @@ def _final_na_metrics(reason: str, skipped: int) -> dict[str, Any]:
         for name, lower in (
             ("final_field_exact_match", False),
             ("final_normalized_field_accuracy", False),
+            ("final_field_level_precision", False),
+            ("final_field_level_recall", False),
+            ("final_field_level_f1", False),
+            ("final_normalized_field_level_precision", False),
+            ("final_normalized_field_level_recall", False),
+            ("final_normalized_field_level_f1", False),
+            ("final_character_error_rate", True),
             ("final_medicine_row_matching", False),
             ("final_item_row_precision", False),
             ("final_item_row_recall", False),
@@ -181,23 +191,46 @@ def _aggregate_final(
     rows: list[dict[str, float]] = []
     per_document: dict[str, dict[str, float]] = {}
     field_counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    exact_counts = {"true_positives": 0, "predicted_fields": 0, "expected_fields": 0}
+    normalized_counts = {"true_positives": 0, "predicted_fields": 0, "expected_fields": 0}
+    character_counts = {"character_errors": 0, "expected_characters": 0}
     missing_predictions = 0
     for document_id, expected in expected_by_document.items():
         predicted = predictions.get(document_id)
         if predicted is None:
             missing_predictions += 1
-            continue
-        document_metrics = final_json_metrics(predicted, expected)
+        evaluated_prediction = predicted if predicted is not None else {}
+        document_metrics = final_json_metrics(evaluated_prediction, expected)
         renamed = {f"final_{name}": value for name, value in document_metrics.items()}
-        rows.append(renamed)
         per_document[document_id] = renamed
-        predicted_fields = flatten_json(canonical_payload_view(predicted))
+        if predicted is not None:
+            rows.append(renamed)
+        for target, source in (
+            (exact_counts, field_level_counts(evaluated_prediction, expected)),
+            (
+                normalized_counts,
+                field_level_counts(evaluated_prediction, expected, normalized=True),
+            ),
+            (character_counts, field_character_error_counts(evaluated_prediction, expected)),
+        ):
+            for key, value in source.items():
+                target[key] += value
+        predicted_fields = flatten_json(canonical_payload_view(evaluated_prediction))
         expected_fields = flatten_json(canonical_payload_view(expected))
         for field, expected_value in expected_fields.items():
             field_counts[field][1] += 1
             field_counts[field][0] += normalize_scalar(
                 predicted_fields.get(field)
             ) == normalize_scalar(expected_value)
+    for document_id in predictions.keys() - expected_by_document.keys():
+        predicted = predictions[document_id]
+        for target, source in (
+            (exact_counts, field_level_counts(predicted, {})),
+            (normalized_counts, field_level_counts(predicted, {}, normalized=True)),
+            (character_counts, field_character_error_counts(predicted, {})),
+        ):
+            for key, value in source.items():
+                target[key] += value
     evaluated = len(rows)
     metrics: dict[str, Any] = {}
     for name in (
@@ -221,6 +254,75 @@ def _aggregate_final(
             False,
             None if evaluated else "no prediction matched canonical final test ground truth",
         )
+    precision, recall, f1 = precision_recall_f1_from_counts(exact_counts)
+    normalized_precision, normalized_recall, normalized_f1 = precision_recall_f1_from_counts(
+        normalized_counts
+    )
+    field_evaluated = len(expected_by_document)
+    metrics.update(
+        {
+            "final_field_level_precision": _metric(
+                precision,
+                exact_counts["true_positives"],
+                exact_counts["predicted_fields"],
+                field_evaluated,
+                skipped_count,
+                False,
+            ),
+            "final_field_level_recall": _metric(
+                recall,
+                exact_counts["true_positives"],
+                exact_counts["expected_fields"],
+                field_evaluated,
+                skipped_count,
+                False,
+            ),
+            "final_field_level_f1": _metric(
+                f1,
+                2 * exact_counts["true_positives"],
+                exact_counts["predicted_fields"] + exact_counts["expected_fields"],
+                field_evaluated,
+                skipped_count,
+                False,
+            ),
+            "final_normalized_field_level_precision": _metric(
+                normalized_precision,
+                normalized_counts["true_positives"],
+                normalized_counts["predicted_fields"],
+                field_evaluated,
+                skipped_count,
+                False,
+            ),
+            "final_normalized_field_level_recall": _metric(
+                normalized_recall,
+                normalized_counts["true_positives"],
+                normalized_counts["expected_fields"],
+                field_evaluated,
+                skipped_count,
+                False,
+            ),
+            "final_normalized_field_level_f1": _metric(
+                normalized_f1,
+                2 * normalized_counts["true_positives"],
+                normalized_counts["predicted_fields"] + normalized_counts["expected_fields"],
+                field_evaluated,
+                skipped_count,
+                False,
+            ),
+            "final_character_error_rate": _metric(
+                (
+                    character_counts["character_errors"] / character_counts["expected_characters"]
+                    if character_counts["expected_characters"]
+                    else 0.0
+                ),
+                character_counts["character_errors"],
+                character_counts["expected_characters"],
+                field_evaluated,
+                skipped_count,
+                True,
+            ),
+        }
+    )
     per_field = {
         field: correct / total for field, (correct, total) in field_counts.items() if total
     }
@@ -514,7 +616,7 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
         "num_workers": request.num_workers,
         "device": device,
         "hardware_fingerprint": reproducibility["hardware_fingerprint"],
-        "metric_code_version": "invoice-ocr-metrics-v2",
+        "metric_code_version": "invoice-ocr-metrics-v3",
         "reproducibility": reproducibility,
         "random_seed": request.seed,
         "command_line": sys.argv,

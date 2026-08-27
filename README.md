@@ -762,6 +762,24 @@ fields. Match fuzzy, duplicate hoặc không resolve chắc chắn vẫn có tro
 model. Dataset dùng BIO ở mức OCR region, bbox integer chuẩn hóa về khoảng `0..1000`, và lưu
 image/page reference, document/page ID, token, confidence và source.
 
+Báo cáo pseudo-GT có `matched_field_character_error_rate` cho tất cả match và
+`training_eligible_field_character_error_rate` cho phần được dùng để train. Đây là CER có điều
+kiện trên các field đã align. Không báo precision/F1 tại bước này vì GT đang được dùng để tìm box;
+gọi các chỉ số đó là kết quả đánh giá độc lập sẽ gây rò GT. Khi matcher hoặc cách tính báo cáo thay
+đổi, có thể dùng lại OCR cache mà không chạy PaddleOCR/VietOCR lần nữa:
+
+```bash
+python -m invoice_ocr.cli realign-layout-gt \
+  --layout-gt work/layout_gt/t5
+```
+
+Kết quả end-to-end trên locked test set mới có field-level precision, recall, F1 và CER hợp lệ.
+Các metric micro tương ứng trong `metrics.json` là `final_field_level_precision`,
+`final_field_level_recall`, `final_field_level_f1` và `final_character_error_rate`. Một giá trị sai
+tại đúng field được tính là một false positive và một false negative; prediction bị thiếu vẫn được
+tính vào false negative và số ký tự bị xóa. Chỉ các field nghiệp vụ có giá trị được tính; `null`,
+field cấu trúc, metadata workflow và validation metadata bị loại để không làm chỉ số cao giả.
+
 Train linear probe và full fine-tune trên cùng label set/split:
 
 ```bash

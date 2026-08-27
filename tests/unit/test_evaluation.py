@@ -36,6 +36,78 @@ def test_final_json_metrics_normalize_only_string_whitespace() -> None:
     assert metric["document_exact_match"] == 0
 
 
+def test_final_json_metrics_report_exact_field_precision_recall_and_f1() -> None:
+    expected = {"correct": "Synthetic A", "missing": "Synthetic B"}
+    predicted = {"correct": "Synthetic A", "extra": "Synthetic C"}
+
+    metric = final_json_metrics(predicted, expected)
+
+    assert metric["field_level_precision"] == 0.5
+    assert metric["field_level_recall"] == 0.5
+    assert metric["field_level_f1"] == 0.5
+
+
+def test_final_json_metrics_count_wrong_value_as_false_positive_and_false_negative() -> None:
+    metric = final_json_metrics({"field": "Wrong"}, {"field": "Expected"})
+
+    assert metric["field_level_precision"] == 0.0
+    assert metric["field_level_recall"] == 0.0
+    assert metric["field_level_f1"] == 0.0
+
+
+def test_field_metrics_exclude_null_structural_and_validation_metadata() -> None:
+    expected = {
+        "document_type": "VAT_INVOICE_BATCH",
+        "invoice_count": 1,
+        "invoices": [
+            {
+                "page_number": 1,
+                "invoice": {"invoice_number": "SYN-001", "invoice_serial": None},
+                "workflow_fields": {
+                    "status": {"value": None, "source": "not_found"},
+                },
+                "validation": {"item_count": 0, "rounding_difference_detected": False},
+            }
+        ],
+    }
+    predicted = {
+        **expected,
+        "invoices": [
+            {
+                **expected["invoices"][0],
+                "invoice": {"invoice_number": "WRONG", "invoice_serial": None},
+            }
+        ],
+    }
+
+    metric = final_json_metrics(predicted, expected)
+
+    assert metric["field_level_precision"] == 0.0
+    assert metric["field_level_recall"] == 0.0
+    assert metric["field_level_f1"] == 0.0
+
+
+def test_final_json_metrics_report_normalized_field_precision_recall_and_f1() -> None:
+    expected = {"field": "Synthetic Value"}
+    predicted = {"field": "  synthetic   value "}
+
+    metric = final_json_metrics(predicted, expected)
+
+    assert metric["field_level_f1"] == 0.0
+    assert metric["normalized_field_level_precision"] == 1.0
+    assert metric["normalized_field_level_recall"] == 1.0
+    assert metric["normalized_field_level_f1"] == 1.0
+
+
+def test_final_json_metrics_report_micro_character_error_rate() -> None:
+    expected = {"correct": "abc", "missing": "xy", "wrong": "cat"}
+    predicted = {"correct": "abc", "wrong": "cut", "extra": "zz"}
+
+    metric = final_json_metrics(predicted, expected)
+
+    assert metric["character_error_rate"] == 5 / 8
+
+
 def test_final_json_metrics_ignore_review_metadata_and_match_reordered_item_rows() -> None:
     expected = {
         "document_type": "VAT_INVOICE_BATCH",

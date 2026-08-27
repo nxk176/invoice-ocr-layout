@@ -128,6 +128,11 @@ def test_builder_serializes_trainable_pseudo_layout_dataset_and_reports_na_iou(
     report = json.loads((output / "alignment_report.json").read_text(encoding="utf-8"))
     assert report["summary"]["matched_fields"] == 1
     assert report["summary"]["unmatched_fields"] == 0
+    assert report["summary"]["matched_character_errors"] == 0
+    assert report["summary"]["matched_expected_characters"] == 7
+    assert report["summary"]["matched_field_character_error_rate"] == 0.0
+    assert report["summary"]["training_eligible_field_character_error_rate"] == 0.0
+    assert report["fields"][0]["character_error_rate"] == 0.0
     assert report["detector_iou"]["status"] == "N/A"
     inspected = inspect_layout_ground_truth(output)
     assert inspected["valid_layout_dataset"] is True

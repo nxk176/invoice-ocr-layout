@@ -9,7 +9,12 @@ from typing import Any
 
 from invoice_ocr.contracts import BoundingBox, DetectionRegion, LabeledEntity, RecognizedRegion
 from invoice_ocr.evaluation.detection import detection_metrics
-from invoice_ocr.evaluation.final_json import final_json_metrics
+from invoice_ocr.evaluation.final_json import (
+    field_character_error_counts,
+    field_level_counts,
+    final_json_metrics,
+    precision_recall_f1_from_counts,
+)
 from invoice_ocr.evaluation.layout import set_metrics
 from invoice_ocr.evaluation.recognition import recognition_metrics
 from invoice_ocr.io.jsonl import read_jsonl
@@ -203,14 +208,27 @@ def _evaluate_final(
     validation_checks = 0
     validation_successes = 0
     missing = 0
+    exact_counts = {"true_positives": 0, "predicted_fields": 0, "expected_fields": 0}
+    normalized_counts = {"true_positives": 0, "predicted_fields": 0, "expected_fields": 0}
+    character_counts = {"character_errors": 0, "expected_characters": 0}
     for relative, path in indexed_targets:
         prediction = run_dir / "predictions" / relative
+        expected = _load_object(path)
         if not prediction.is_file():
             missing += 1
+            predicted: dict[str, Any] = {}
+        else:
+            predicted = _load_object(prediction)
+            rows.append(final_json_metrics(predicted, expected))
+        for target, source in (
+            (exact_counts, field_level_counts(predicted, expected)),
+            (normalized_counts, field_level_counts(predicted, expected, normalized=True)),
+            (character_counts, field_character_error_counts(predicted, expected)),
+        ):
+            for key, value in source.items():
+                target[key] += value
+        if not prediction.is_file():
             continue
-        predicted = _load_object(prediction)
-        expected = _load_object(path)
-        rows.append(final_json_metrics(predicted, expected))
         for invoice in predicted.get("invoices", []):
             validation = invoice.get("validation", {})
             for field in (
@@ -220,11 +238,26 @@ def _evaluate_final(
                 if validation.get(field) is not None:
                     validation_checks += 1
                     validation_successes += validation.get(field) is True
+    precision, recall, f1 = precision_recall_f1_from_counts(exact_counts)
+    normalized_precision, normalized_recall, normalized_f1 = precision_recall_f1_from_counts(
+        normalized_counts
+    )
     result: dict[str, Any] = {
         "final_status": "available",
         "final_target_documents": len(indexed_targets),
         "final_missing_predictions": missing,
         **_average(rows),
+        "field_level_precision": precision,
+        "field_level_recall": recall,
+        "field_level_f1": f1,
+        "normalized_field_level_precision": normalized_precision,
+        "normalized_field_level_recall": normalized_recall,
+        "normalized_field_level_f1": normalized_f1,
+        "character_error_rate": (
+            character_counts["character_errors"] / character_counts["expected_characters"]
+            if character_counts["expected_characters"]
+            else 0.0
+        ),
     }
     result["validation_success_rate"] = (
         validation_successes / validation_checks if validation_checks else None

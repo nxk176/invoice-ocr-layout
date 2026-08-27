@@ -23,6 +23,7 @@ from invoice_ocr.contracts import (
     ProcessingStatus,
     SourceDocument,
 )
+from invoice_ocr.evaluation.recognition import edit_distance
 from invoice_ocr.exceptions import ConfigurationError, OutputExistsError
 from invoice_ocr.io.paths import discover_documents
 from invoice_ocr.io.pdf_render import render_document
@@ -356,6 +357,30 @@ def _method_counts(matches: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _alignment_cer_metrics(rows: list[dict[str, Any]]) -> dict[str, int | float]:
+    def counts(selected: list[dict[str, Any]]) -> tuple[int, int]:
+        errors = sum(int(row["character_errors"]) for row in selected)
+        expected_characters = sum(int(row["expected_characters"]) for row in selected)
+        return errors, expected_characters
+
+    matched_rows = [row for row in rows if row["status"] == "matched"]
+    eligible_rows = [row for row in matched_rows if row.get("training_eligible") is True]
+    matched_errors, matched_characters = counts(matched_rows)
+    eligible_errors, eligible_characters = counts(eligible_rows)
+    return {
+        "matched_character_errors": matched_errors,
+        "matched_expected_characters": matched_characters,
+        "matched_field_character_error_rate": (
+            matched_errors / matched_characters if matched_characters else 0.0
+        ),
+        "training_eligible_character_errors": eligible_errors,
+        "training_eligible_expected_characters": eligible_characters,
+        "training_eligible_field_character_error_rate": (
+            eligible_errors / eligible_characters if eligible_characters else 0.0
+        ),
+    }
+
+
 def _group_coverage(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
     totals: Counter[str] = Counter()
     matched: Counter[str] = Counter()
@@ -379,6 +404,7 @@ def _group_coverage(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str,
             "training_eligible_fields": eligible[name],
             "coverage_percent": matched[name] / total * 100 if total else 0.0,
             "training_coverage_percent": eligible[name] / total * 100 if total else 0.0,
+            **_alignment_cer_metrics([row for row in rows if str(row[key]) == name]),
         }
         for name, total in sorted(totals.items())
     }
@@ -416,10 +442,17 @@ def write_alignment_report(
                         "duplicate_candidates": False,
                         "candidate_count": 0,
                         "training_eligible": False,
+                        "character_errors": "",
+                        "expected_characters": "",
+                        "character_error_rate": "",
                     }
                 )
                 continue
             match_payloads.append(match)
+            gt_text = str(target.gt_value)
+            ocr_text = str(match["ocr_text"])
+            character_errors = edit_distance(list(ocr_text), list(gt_text))
+            expected_characters = len(gt_text)
             rows.append(
                 {
                     "document_id": document.document_id,
@@ -437,6 +470,11 @@ def write_alignment_report(
                     "duplicate_candidates": match["duplicate_candidates"],
                     "candidate_count": match["candidate_count"],
                     "training_eligible": match["training_eligible"],
+                    "character_errors": character_errors,
+                    "expected_characters": expected_characters,
+                    "character_error_rate": (
+                        character_errors / expected_characters if expected_characters else 0.0
+                    ),
                 }
             )
     total = len(rows)
@@ -450,6 +488,7 @@ def write_alignment_report(
         "training_eligible_fields": eligible,
         "coverage_percent": matched / total * 100 if total else 0.0,
         "training_coverage_percent": eligible / total * 100 if total else 0.0,
+        **_alignment_cer_metrics(rows),
         "target_documents": index.target_count,
         "processed_documents": len(documents),
         "failed_documents": len(document_errors),
@@ -489,6 +528,9 @@ def write_alignment_report(
         "duplicate_candidates",
         "candidate_count",
         "training_eligible",
+        "character_errors",
+        "expected_characters",
+        "character_error_rate",
     ]
     with (output_dir / "alignment_report.csv").open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=columns)
