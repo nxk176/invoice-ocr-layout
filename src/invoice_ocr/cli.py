@@ -177,6 +177,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_layout_gt.add_argument("--layout-gt", type=Path, required=True)
 
+    realign_layout_gt = subparsers.add_parser(
+        "realign-layout-gt",
+        help="rebuild pseudo LayoutLM labels/reports from cached pretrained OCR",
+    )
+    realign_layout_gt.add_argument("--layout-gt", type=Path, required=True)
+    realign_layout_gt.add_argument("--max-alignment-boxes", type=int, default=12)
+
     train = subparsers.add_parser("train", help="fine-tune one pipeline stage")
     add_common_options(train)
     add_locked_training_options(train)
@@ -636,6 +643,19 @@ def dispatch(args: argparse.Namespace) -> int:
                 inspect_layout_ground_truth(args.layout_gt),
                 ensure_ascii=False,
                 indent=2,
+            )
+        )
+    elif args.command == "realign-layout-gt":
+        from invoice_ocr.layout_gt.builder import (
+            LayoutGTRealignRequest,
+            realign_layout_ground_truth,
+        )
+
+        configure_logging()
+        realign_layout_ground_truth(
+            LayoutGTRealignRequest(
+                layout_gt_root=args.layout_gt,
+                max_alignment_boxes=args.max_alignment_boxes,
             )
         )
     elif args.command == "validate-gt":

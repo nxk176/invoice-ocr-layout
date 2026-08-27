@@ -10,12 +10,19 @@ import time
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from invoice_ocr.adapters.detectors import DETECTORS, DetectorAdapter
 from invoice_ocr.adapters.recognizers import RECOGNIZERS, RecognizerAdapter
-from invoice_ocr.contracts import DetectionRegion, DocumentPage, SourceDocument
+from invoice_ocr.contracts import (
+    BoundingBox,
+    DetectionRegion,
+    DocumentPage,
+    ProcessingStatus,
+    SourceDocument,
+)
 from invoice_ocr.exceptions import ConfigurationError, OutputExistsError
 from invoice_ocr.io.paths import discover_documents
 from invoice_ocr.io.pdf_render import render_document
@@ -55,6 +62,12 @@ class LayoutGTBuildRequest:
     gt_prefix: str | None = None
     target_manifest: Path | None = None
     force: bool = False
+    max_alignment_boxes: int = 12
+
+
+@dataclass(frozen=True)
+class LayoutGTRealignRequest:
+    layout_gt_root: Path
     max_alignment_boxes: int = 12
 
 
@@ -164,6 +177,74 @@ def _relative_image_path(page: DocumentPage, output_dir: Path) -> str:
         ) from exc
 
 
+def _cached_image_path(layout_gt_root: Path, relative_path: str) -> Path:
+    resolved_root = layout_gt_root.expanduser().resolve()
+    resolved_image = (resolved_root / relative_path).resolve()
+    try:
+        resolved_image.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError(f"cached page image escapes pseudo-layout root: {relative_path}") from exc
+    if not resolved_image.is_file():
+        raise FileNotFoundError(f"cached page image not found: {resolved_image}")
+    return resolved_image
+
+
+def _load_cached_ocr(
+    layout_gt_root: Path,
+    document: SourceDocument,
+) -> tuple[list[DocumentPage], list[OCRRegion]]:
+    cache_path = layout_gt_root / "ocr" / f"{document.document_id}.json"
+    payload = _load_object(cache_path)
+    if payload.get("document_id") != document.document_id:
+        raise ValueError(f"cached OCR document_id mismatch: {cache_path}")
+    if payload.get("source_relative_path") != document.relative_path:
+        raise ValueError(f"cached OCR source path mismatch: {cache_path}")
+    raw_pages = payload.get("pages")
+    if not isinstance(raw_pages, list) or not raw_pages:
+        raise ValueError(f"cached OCR contains no pages: {cache_path}")
+    pages: list[DocumentPage] = []
+    regions: list[OCRRegion] = []
+    for raw_page in raw_pages:
+        if not isinstance(raw_page, dict):
+            raise ValueError(f"invalid cached OCR page in {cache_path}")
+        page_index = int(raw_page["page_index"])
+        page = DocumentPage(
+            document_id=document.document_id,
+            source_path=document.source_path,
+            page_index=page_index,
+            model_name="cached-pretrained-ocr",
+            processing_status=ProcessingStatus.SUCCESS,
+            image_path=str(_cached_image_path(layout_gt_root, str(raw_page["image_path"]))),
+            width=int(raw_page["width"]),
+            height=int(raw_page["height"]),
+        )
+        pages.append(page)
+        raw_regions = raw_page.get("regions")
+        if not isinstance(raw_regions, list):
+            raise ValueError(f"invalid cached OCR regions in {cache_path}")
+        for raw_region in raw_regions:
+            if not isinstance(raw_region, dict):
+                raise ValueError(f"invalid cached OCR region in {cache_path}")
+            box = BoundingBox(
+                x_min=float(raw_region["bbox"][0]),
+                y_min=float(raw_region["bbox"][1]),
+                x_max=float(raw_region["bbox"][2]),
+                y_max=float(raw_region["bbox"][3]),
+            )
+            regions.append(
+                OCRRegion(
+                    region_id=str(raw_region["region_id"]),
+                    page_index=page_index,
+                    text=str(raw_region["text"]),
+                    bbox=box,
+                    polygon=[[float(point[0]), float(point[1])] for point in raw_region["polygon"]],
+                    detection_confidence=float(raw_region["detection_confidence"]),
+                    recognition_confidence=float(raw_region["recognition_confidence"]),
+                )
+            )
+    return pages, regions
+
+
 def _serialize_document(
     output_dir: Path,
     document: SourceDocument,
@@ -171,6 +252,8 @@ def _serialize_document(
     pages: list[DocumentPage],
     regions: list[OCRRegion],
     result: AlignmentResult,
+    *,
+    write_ocr: bool = True,
 ) -> None:
     regions_by_page: dict[int, list[OCRRegion]] = defaultdict(list)
     for region in regions:
@@ -231,15 +314,16 @@ def _serialize_document(
                     "regions": serialized_regions,
                 }
             )
-    _write_object(
-        output_dir / "ocr" / f"{document.document_id}.json",
-        {
-            "document_id": document.document_id,
-            "source_relative_path": document.relative_path,
-            "source": PSEUDO_ANNOTATION_SOURCE,
-            "pages": ocr_pages,
-        },
-    )
+    if write_ocr:
+        _write_object(
+            output_dir / "ocr" / f"{document.document_id}.json",
+            {
+                "document_id": document.document_id,
+                "source_relative_path": document.relative_path,
+                "source": PSEUDO_ANNOTATION_SOURCE,
+                "pages": ocr_pages,
+            },
+        )
     if not layout_pages:
         return
     _write_object(
@@ -595,6 +679,105 @@ def build_layout_ground_truth(
         request.output_dir,
     )
     return request.output_dir
+
+
+def realign_layout_ground_truth(request: LayoutGTRealignRequest) -> Path:
+    """Rebuild layout labels/reports from cached OCR without model inference."""
+    if request.max_alignment_boxes <= 0:
+        raise ConfigurationError("max alignment boxes must be positive")
+    layout_gt_root = request.layout_gt_root.expanduser().resolve()
+    index = load_final_ground_truth_index(layout_gt_root / "document_index.json")
+    manifest_path = layout_gt_root / "manifest.json"
+    manifest = _load_object(manifest_path)
+    documents = {
+        document.document_id: document for document in discover_documents(Path(index.data_root))
+    }
+    missing_documents = sorted(set(index.by_document_id()) - set(documents))
+    if missing_documents:
+        raise ConfigurationError(
+            "cached realignment source documents are missing: " + ", ".join(missing_documents)
+        )
+    cached: dict[str, tuple[list[DocumentPage], list[OCRRegion]]] = {}
+    for target in index.documents:
+        document = documents[target.document_id]
+        if document.relative_path != target.source_relative_path:
+            raise ValueError(
+                f"indexed source path changed for {target.document_id}: {document.relative_path}"
+            )
+        if document.sha256 != target.source_sha256:
+            raise ValueError(f"indexed source document changed after OCR: {document.source_path}")
+        # final_gt_path verifies both presence and the locked GT content hash.
+        final_gt_path(index, target)
+        cached[target.document_id] = _load_cached_ocr(layout_gt_root, document)
+
+    LOGGER.info(
+        "Starting cached pseudo-layout realignment: targets=%d max_boxes=%d",
+        index.target_count,
+        request.max_alignment_boxes,
+    )
+    alignments: list[DocumentAlignment] = []
+    for position, target in enumerate(index.documents, start=1):
+        document = documents[target.document_id]
+        pages, regions = cached[target.document_id]
+        fields = flatten_canonical_ground_truth(_load_object(final_gt_path(index, target)))
+        result = align_ground_truth_fields(
+            fields,
+            regions,
+            max_boxes=request.max_alignment_boxes,
+        )
+        _serialize_document(
+            layout_gt_root,
+            document,
+            target.gt_relative_path,
+            pages,
+            regions,
+            result,
+            write_ocr=False,
+        )
+        alignments.append(
+            DocumentAlignment(
+                document_id=document.document_id,
+                source_relative_path=document.relative_path,
+                gt_relative_path=target.gt_relative_path,
+                result=result,
+            )
+        )
+        LOGGER.info(
+            "[%d/%d] Realigned %s: matched=%d unmatched=%d ambiguous=%d",
+            position,
+            index.target_count,
+            document.relative_path,
+            len(result.matches),
+            len(result.unmatched),
+            sum(match.ambiguous for match in result.matches),
+        )
+    report = write_alignment_report(layout_gt_root, alignments, index, [])
+    previous_count = manifest.get("realignment_count", 0)
+    realignment_count = int(previous_count) + 1 if isinstance(previous_count, int) else 1
+    manifest.update(
+        {
+            "layout_annotation_count": len(list((layout_gt_root / "layout").glob("*.json"))),
+            "failed_document_count": 0,
+            "alignment_summary": report["summary"],
+            "detector_iou": report["detector_iou"],
+            "realignment_count": realignment_count,
+            "last_realigned_at": datetime.now(timezone.utc).isoformat(),
+            "last_realignment_source": "cached_pretrained_ocr",
+            "max_alignment_boxes": request.max_alignment_boxes,
+        }
+    )
+    _write_object(manifest_path, manifest)
+    summary = report["summary"]
+    LOGGER.info(
+        "Cached pseudo-layout realignment completed: matched=%d eligible=%d/%d "
+        "training_coverage=%.2f%% output=%s",
+        summary["matched_fields"],
+        summary["training_eligible_fields"],
+        summary["total_gt_fields"],
+        summary["training_coverage_percent"],
+        layout_gt_root,
+    )
+    return layout_gt_root
 
 
 def inspect_layout_ground_truth(layout_gt_root: Path) -> dict[str, Any]:

@@ -54,6 +54,19 @@ def test_build_layout_gt_cli_accepts_independent_ocr_devices() -> None:
     assert args.recognizer_device == "cuda"
 
 
+def test_realign_layout_gt_cli_requires_only_cached_layout_root() -> None:
+    args = build_parser().parse_args(
+        [
+            "realign-layout-gt",
+            "--layout-gt",
+            "work/layout_gt/t5",
+        ]
+    )
+
+    assert args.layout_gt == Path("work/layout_gt/t5")
+    assert args.max_alignment_boxes == 12
+
+
 def test_requested_layout_training_cli_can_derive_data_and_gt_from_layout_manifest() -> None:
     args = build_parser().parse_args(
         [

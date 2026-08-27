@@ -23,8 +23,10 @@ from invoice_ocr.contracts import (
 from invoice_ocr.io.paths import discover_documents
 from invoice_ocr.layout_gt.builder import (
     LayoutGTBuildRequest,
+    LayoutGTRealignRequest,
     build_layout_ground_truth,
     inspect_layout_ground_truth,
+    realign_layout_ground_truth,
 )
 
 
@@ -133,3 +135,18 @@ def test_builder_serializes_trainable_pseudo_layout_dataset_and_reports_na_iou(
     assert "[1/1] Processing synthetic-folder/invoice.png" in caplog.text
     assert "[1/1] Completed synthetic-folder/invoice.png" in caplog.text
     assert "Pseudo-layout GT build completed" in caplog.text
+
+    ocr_path = output / "ocr" / f"{document.document_id}.json"
+    image_path = output / page["image_path"]
+    protected_paths = (source, gt_path, ocr_path, image_path)
+    protected_contents = {path: path.read_bytes() for path in protected_paths}
+
+    realign_layout_ground_truth(LayoutGTRealignRequest(layout_gt_root=output))
+
+    assert {path: path.read_bytes() for path in protected_paths} == protected_contents
+    realigned = json.loads(annotation_path.read_text(encoding="utf-8"))
+    assert realigned["pages"][0]["labels"] == ["B-INVOICE_NUMBER"]
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["realignment_count"] == 1
+    assert manifest["last_realignment_source"] == "cached_pretrained_ocr"
+    assert "Cached pseudo-layout realignment completed" in caplog.text
