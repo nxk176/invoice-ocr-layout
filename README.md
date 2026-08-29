@@ -773,6 +773,20 @@ python -m invoice_ocr.cli realign-layout-gt \
   --layout-gt work/layout_gt/t5
 ```
 
+Lọc pseudo-GT trước khi train và giữ nguyên dataset gốc:
+
+```bash
+python -m invoice_ocr.cli clean-layout-gt \
+  --layout-gt work/layout_gt/t5 \
+  --output work/layout_gt/t5_clean \
+  --profile conservative
+```
+
+Profile `conservative` chỉ giữ match exact hoặc typed-normalized có một box, không ambiguous,
+không duplicate và đủ confidence. Match cần kiểm tra được ghi vào `review_queue.json`; token
+`REVIEW/IGNORE` có `ignore_mask=true` và nhận label loss `-100`, không bị học sai thành `O`.
+`cleaning_report.json` thống kê `KEEP/REVIEW/IGNORE` theo field và lý do.
+
 Kết quả end-to-end trên locked test set mới có field-level precision, recall, F1 và CER hợp lệ.
 Các metric micro tương ứng trong `metrics.json` là `final_field_level_precision`,
 `final_field_level_recall`, `final_field_level_f1` và `final_character_error_rate`. Một giá trị sai
@@ -787,7 +801,7 @@ python -m invoice_ocr.cli train \
   --stage layout \
   --model layoutlmv3 \
   --layout-training-mode linear_probe \
-  --layout-gt work/layout_gt/t5 \
+  --layout-gt work/layout_gt/t5_clean \
   --split-manifest GT/splits/t5_split_v1.json \
   --output models/finetuned/layoutlmv3_linear_probe
 
@@ -795,7 +809,7 @@ python -m invoice_ocr.cli train \
   --stage layout \
   --model layoutlmv3 \
   --layout-training-mode full_finetune \
-  --layout-gt work/layout_gt/t5 \
+  --layout-gt work/layout_gt/t5_clean \
   --split-manifest GT/splits/t5_split_v1.json \
   --output models/finetuned/layoutlmv3_full_finetune
 ```

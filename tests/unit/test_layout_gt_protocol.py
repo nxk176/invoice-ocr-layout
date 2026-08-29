@@ -67,6 +67,22 @@ def test_realign_layout_gt_cli_requires_only_cached_layout_root() -> None:
     assert args.max_alignment_boxes == 12
 
 
+def test_clean_layout_gt_cli_uses_conservative_profile_by_default() -> None:
+    args = build_parser().parse_args(
+        [
+            "clean-layout-gt",
+            "--layout-gt",
+            "work/layout_gt/t5",
+            "--output",
+            "work/layout_gt/t5_clean",
+        ]
+    )
+
+    assert args.layout_gt == Path("work/layout_gt/t5")
+    assert args.output == Path("work/layout_gt/t5_clean")
+    assert args.profile == "conservative"
+
+
 def test_requested_layout_training_cli_can_derive_data_and_gt_from_layout_manifest() -> None:
     args = build_parser().parse_args(
         [

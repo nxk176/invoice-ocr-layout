@@ -824,18 +824,26 @@ def realign_layout_ground_truth(request: LayoutGTRealignRequest) -> Path:
 
 def inspect_layout_ground_truth(layout_gt_root: Path) -> dict[str, Any]:
     report_path = layout_gt_root / "alignment_report.json"
+    cleaning_report_path = layout_gt_root / "cleaning_report.json"
     manifest_path = layout_gt_root / "manifest.json"
-    if not report_path.is_file() or not manifest_path.is_file():
+    if not manifest_path.is_file() or not (report_path.is_file() or cleaning_report_path.is_file()):
         raise FileNotFoundError(
-            f"pseudo-layout manifest/report not found under {layout_gt_root}; run build-layout-gt"
+            f"pseudo-layout manifest/report not found under {layout_gt_root}; "
+            "run build-layout-gt or clean-layout-gt"
         )
-    report = _load_object(report_path)
+    selected_report_path = cleaning_report_path if cleaning_report_path.is_file() else report_path
+    report = _load_object(selected_report_path)
     validation = validate_ground_truth(layout_gt_root)
     return {
         "root": str(layout_gt_root.expanduser().resolve()),
         "valid_layout_dataset": validation.is_valid,
         "layout_annotation_count": validation.layout_count,
         "validation_errors": validation.errors,
+        "report_kind": (
+            "cleaning_report"
+            if selected_report_path == cleaning_report_path
+            else "alignment_report"
+        ),
         "summary": report.get("summary", {}),
         "detector_iou": report.get("detector_iou"),
     }

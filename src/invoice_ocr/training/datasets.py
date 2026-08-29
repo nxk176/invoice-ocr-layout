@@ -95,6 +95,15 @@ def _validate_layout(payload: dict[str, Any], path: Path) -> None:
             raise InvalidGroundTruthError(
                 f"layout tokens, boxes, and labels must be equal non-zero length: {path}"
             )
+        ignore_mask = page.get("ignore_mask")
+        if ignore_mask is not None and (
+            not isinstance(ignore_mask, list)
+            or len(ignore_mask) != len(tokens)
+            or not all(isinstance(value, bool) for value in ignore_mask)
+        ):
+            raise InvalidGroundTruthError(
+                f"layout ignore_mask must be a boolean array matching tokens: {path}"
+            )
         for box in boxes:
             if (
                 not isinstance(box, list)
@@ -203,6 +212,7 @@ def load_layout_pages(paths: list[Path]) -> list[dict[str, Any]]:
                     "tokens": page["tokens"],
                     "boxes": page["boxes"],
                     "labels": page["labels"],
+                    "ignore_mask": page.get("ignore_mask", [False] * len(page["tokens"])),
                 }
             )
     return pages

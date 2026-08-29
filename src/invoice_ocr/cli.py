@@ -184,6 +184,14 @@ def build_parser() -> argparse.ArgumentParser:
     realign_layout_gt.add_argument("--layout-gt", type=Path, required=True)
     realign_layout_gt.add_argument("--max-alignment-boxes", type=int, default=12)
 
+    clean_layout_gt = subparsers.add_parser(
+        "clean-layout-gt",
+        help="derive conservative train labels and a manual review queue from pseudo GT",
+    )
+    clean_layout_gt.add_argument("--layout-gt", type=Path, required=True)
+    clean_layout_gt.add_argument("--output", type=Path, required=True)
+    clean_layout_gt.add_argument("--profile", choices=("conservative",), default="conservative")
+
     train = subparsers.add_parser("train", help="fine-tune one pipeline stage")
     add_common_options(train)
     add_locked_training_options(train)
@@ -656,6 +664,20 @@ def dispatch(args: argparse.Namespace) -> int:
             LayoutGTRealignRequest(
                 layout_gt_root=args.layout_gt,
                 max_alignment_boxes=args.max_alignment_boxes,
+            )
+        )
+    elif args.command == "clean-layout-gt":
+        from invoice_ocr.layout_gt.cleaner import (
+            LayoutGTCleanRequest,
+            clean_layout_ground_truth,
+        )
+
+        configure_logging()
+        clean_layout_ground_truth(
+            LayoutGTCleanRequest(
+                layout_gt_root=args.layout_gt,
+                output_dir=args.output,
+                profile=args.profile,
             )
         )
     elif args.command == "validate-gt":

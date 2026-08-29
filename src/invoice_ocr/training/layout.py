@@ -98,7 +98,11 @@ class LayoutPageDataset:
                 padding="max_length",
                 return_tensors="pt",
             )
-        label_ids = [self.label_to_id[str(label)] for label in page["labels"]]
+        ignore_mask = page.get("ignore_mask", [False] * len(page["labels"]))
+        label_ids = [
+            -100 if ignore else self.label_to_id[str(label)]
+            for label, ignore in zip(page["labels"], ignore_mask, strict=True)
+        ]
         encoding["labels"] = align_word_labels(encoding, label_ids)
         return {
             key: value.squeeze(0) if hasattr(value, "squeeze") else value
