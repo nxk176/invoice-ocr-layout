@@ -825,6 +825,9 @@ python -m invoice_ocr.cli experiment \
   --pipeline paddleocr vietocr layoutlmv3 \
   --layout-checkpoint models/finetuned/layoutlmv3_linear_probe/best \
   --layout-checkpoint-mode linear_probe \
+  --detector-device cpu \
+  --recognizer-device cuda \
+  --layout-device cuda \
   --data data/t5 \
   --gt GT \
   --split-manifest GT/splits/t5_split_v1.json \
@@ -835,6 +838,9 @@ python -m invoice_ocr.cli experiment \
   --pipeline paddleocr vietocr layoutlmv3 \
   --layout-checkpoint models/finetuned/layoutlmv3_full_finetune/best \
   --layout-checkpoint-mode full_finetune \
+  --detector-device cpu \
+  --recognizer-device cuda \
+  --layout-device cuda \
   --data data/t5 \
   --gt GT \
   --split-manifest GT/splits/t5_split_v1.json \

@@ -74,6 +74,9 @@ class PipelineEvaluationRequest:
     work_root: Path = Path("work")
     workflow_defaults: Path | None = None
     device: str = "auto"
+    detector_device: str | None = None
+    recognizer_device: str | None = None
+    layout_device: str | None = None
     batch_size: int = 1
     num_workers: int = 0
     warmup_iterations: int = 0
@@ -428,22 +431,27 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
     predictions_dir = request.output_dir / "predictions"
     predictions_dir.mkdir(parents=True, exist_ok=True)
     device = resolve_device(request.device)
+    stage_devices = {
+        "detector": resolve_device(request.detector_device or device),
+        "recognizer": resolve_device(request.recognizer_device or device),
+        "layout": resolve_device(request.layout_device or device),
+    }
     timer = EvaluationTimer(request.warmup_iterations)
     timer.start()
     with timer.stage("model_load"):
         detector = DETECTORS[request.pipeline.detector](
             request.model_root,
-            device,
+            stage_devices["detector"],
             request.checkpoints.get("detector"),
         )
         recognizer = RECOGNIZERS[request.pipeline.recognizer](
             request.model_root,
-            device,
+            stage_devices["recognizer"],
             request.checkpoints.get("recognizer"),
         )
         layout = LAYOUT_ADAPTERS[request.pipeline.layout](
             request.model_root,
-            device,
+            stage_devices["layout"],
             request.checkpoints.get("layout"),
         )
         detector.prepare()
@@ -615,6 +623,7 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
         "batch_size": request.batch_size,
         "num_workers": request.num_workers,
         "device": device,
+        "stage_devices": stage_devices,
         "hardware_fingerprint": reproducibility["hardware_fingerprint"],
         "metric_code_version": "invoice-ocr-metrics-v3",
         "reproducibility": reproducibility,
@@ -638,6 +647,7 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                 "batch_size": request.batch_size,
                 "num_workers": request.num_workers,
                 "device": device,
+                "stage_devices": stage_devices,
             },
             sort_keys=False,
         ),

@@ -309,6 +309,21 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("linear_probe", "full_finetune"),
         default="full_finetune",
     )
+    experiment.add_argument(
+        "--detector-device",
+        choices=("auto", "cpu", "cuda"),
+        help="override --device for the detector during pipeline evaluation",
+    )
+    experiment.add_argument(
+        "--recognizer-device",
+        choices=("auto", "cpu", "cuda"),
+        help="override --device for the recognizer during pipeline evaluation",
+    )
+    experiment.add_argument(
+        "--layout-device",
+        choices=("auto", "cpu", "cuda"),
+        help="override --device for the layout model during pipeline evaluation",
+    )
     experiment.add_argument("--split", choices=("test",), default="test")
     experiment.add_argument("--split-manifest", type=Path)
     experiment.add_argument("--output", type=Path, required=True)
@@ -538,6 +553,9 @@ def _dispatch_experiment(args: argparse.Namespace) -> int:
                 work_root=args.work_root / args.output.name,
                 workflow_defaults=args.workflow_defaults,
                 device=args.device,
+                detector_device=args.detector_device,
+                recognizer_device=args.recognizer_device,
+                layout_device=args.layout_device,
                 batch_size=args.batch_size,
                 num_workers=args.num_workers,
                 warmup_iterations=args.warmup_iterations,

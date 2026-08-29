@@ -116,6 +116,12 @@ def test_requested_direct_end_to_end_cli_accepts_trained_layout_checkpoint() -> 
             "layoutlmv3",
             "--layout-checkpoint",
             "models/finetuned/layoutlmv3_full_finetune/best",
+            "--detector-device",
+            "cpu",
+            "--recognizer-device",
+            "cuda",
+            "--layout-device",
+            "cuda",
             "--data",
             "data/t5",
             "--gt",
@@ -128,6 +134,9 @@ def test_requested_direct_end_to_end_cli_accepts_trained_layout_checkpoint() -> 
     )
     assert args.layout_checkpoint == Path("models/finetuned/layoutlmv3_full_finetune/best")
     assert args.split == "test"
+    assert args.detector_device == "cpu"
+    assert args.recognizer_device == "cuda"
+    assert args.layout_device == "cuda"
 
 
 def test_final_gt_values_are_loaded_only_after_all_test_inference(
@@ -154,10 +163,11 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
     locked = create_locked_split(data, gt, split, seed=42)
     assert len(locked.test_document_ids) == 2
     events: list[str] = []
+    adapter_devices: dict[str, str] = {}
 
     class FakeDetector:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            pass
+        def __init__(self, _model_root: Path, device: str, _checkpoint: Path | None) -> None:
+            adapter_devices["detector"] = device
 
         def prepare(self) -> None:
             pass
@@ -166,8 +176,8 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
             return []
 
     class FakeRecognizer:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            pass
+        def __init__(self, _model_root: Path, device: str, _checkpoint: Path | None) -> None:
+            adapter_devices["recognizer"] = device
 
         def prepare(self) -> None:
             pass
@@ -178,8 +188,8 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
     class FakeLayout:
         provides_invoice_labels = True
 
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            pass
+        def __init__(self, _model_root: Path, device: str, _checkpoint: Path | None) -> None:
+            adapter_devices["layout"] = device
 
         def prepare(self) -> None:
             pass
@@ -191,6 +201,7 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
     monkeypatch.setitem(module.DETECTORS, "paddleocr", FakeDetector)
     monkeypatch.setitem(module.RECOGNIZERS, "vietocr", FakeRecognizer)
     monkeypatch.setitem(module.LAYOUT_ADAPTERS, "layoutlmv3", FakeLayout)
+    monkeypatch.setattr(module, "resolve_device", lambda requested: requested)
     original_load = module._load_object
 
     def tracked_load(path: Path) -> dict[str, Any]:
@@ -212,8 +223,16 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
             output_dir=output,
             work_root=tmp_path / "work",
             device="cpu",
+            detector_device="cpu",
+            recognizer_device="cuda",
+            layout_device="cuda",
         )
     )
+    assert adapter_devices == {
+        "detector": "cpu",
+        "recognizer": "cuda",
+        "layout": "cuda",
+    }
     assert events[: len(locked.test_document_ids)] == ["inference", "inference"]
     assert events[len(locked.test_document_ids) :] == ["gt", "gt"]
 
