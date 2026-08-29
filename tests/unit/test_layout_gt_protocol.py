@@ -164,6 +164,7 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
     assert len(locked.test_document_ids) == 2
     events: list[str] = []
     adapter_devices: dict[str, str] = {}
+    oriented_pages: list[int] = []
 
     class FakeDetector:
         def __init__(self, _model_root: Path, device: str, _checkpoint: Path | None) -> None:
@@ -202,6 +203,16 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
     monkeypatch.setitem(module.RECOGNIZERS, "vietocr", FakeRecognizer)
     monkeypatch.setitem(module.LAYOUT_ADAPTERS, "layoutlmv3", FakeLayout)
     monkeypatch.setattr(module, "resolve_device", lambda requested: requested)
+
+    def orient_page(
+        page: Any,
+        detector: FakeDetector,
+        _recognizer: FakeRecognizer,
+    ) -> tuple[Any, list[Any]]:
+        oriented_pages.append(page.page_index)
+        return page, detector.detect(page)
+
+    monkeypatch.setattr(module, "auto_orient_page", orient_page)
     original_load = module._load_object
 
     def tracked_load(path: Path) -> dict[str, Any]:
@@ -233,6 +244,7 @@ def test_final_gt_values_are_loaded_only_after_all_test_inference(
         "recognizer": "cuda",
         "layout": "cuda",
     }
+    assert oriented_pages == [0, 0]
     assert events[: len(locked.test_document_ids)] == ["inference", "inference"]
     assert events[len(locked.test_document_ids) :] == ["gt", "gt"]
 

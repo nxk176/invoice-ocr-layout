@@ -536,6 +536,7 @@ def _dispatch_experiment(args: argparse.Namespace) -> int:
             evaluate_pipeline,
         )
 
+        configure_logging()
         result = evaluate_pipeline(
             PipelineEvaluationRequest(
                 pipeline=pipeline,

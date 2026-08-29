@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ from invoice_ocr.layout_gt.index import (
     final_gt_path,
     load_final_ground_truth_index,
 )
+from invoice_ocr.layout_gt.orientation import auto_orient_page
 from invoice_ocr.model_manifest import load_adapter_manifest
 from invoice_ocr.pipeline import (
     PipelineSelection,
@@ -59,6 +61,8 @@ from invoice_ocr.reconstruction.medicine_rows import (
     reconstruct_medicine_item,
     reconstruct_rows,
 )
+
+LOGGER = logging.getLogger("invoice_ocr")
 
 
 @dataclass
@@ -457,6 +461,17 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
         detector.prepare()
         recognizer.prepare()
         layout.prepare()
+    LOGGER.info(
+        "Models ready; starting locked-test pipeline evaluation: "
+        "documents=%d detector=%s(%s) recognizer=%s(%s) layout=%s(%s)",
+        len(documents),
+        request.pipeline.detector,
+        stage_devices["detector"],
+        request.pipeline.recognizer,
+        stage_devices["recognizer"],
+        request.pipeline.layout,
+        stage_devices["layout"],
+    )
     defaults = load_workflow_defaults(request.workflow_defaults)
     tolerance = Decimal(str(request.validation_tolerance))
     required_fields = [str(value) for value in defaults.get("required_fields", [])]
@@ -477,23 +492,36 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
     errors: list[dict[str, Any]] = []
     processed_pages = 0
     failed = 0
-    for document in documents:
+    total_documents = len(documents)
+    for document_index, document in enumerate(documents, start=1):
+        LOGGER.info(
+            "[%d/%d] Processing %s",
+            document_index,
+            total_documents,
+            document.relative_path,
+        )
         with timer.document():
             try:
                 invoices = []
+                document_entities = 0
                 for page in rendered[document.document_id]:
                     with timer.stage("detection"):
-                        detections = detector.detect(page)
+                        oriented_page, detections = auto_orient_page(
+                            page,
+                            detector,
+                            recognizer,
+                        )
                     with timer.stage("recognition"):
-                        recognitions = recognizer.recognize(page, detections)
+                        recognitions = recognizer.recognize(oriented_page, detections)
                     with timer.stage("layout_inference"):
-                        entities, _relations = layout.extract(page, recognitions)
+                        entities, _relations = layout.extract(oriented_page, recognitions)
+                        document_entities += len(entities)
                     with timer.stage("table_reconstruction"):
                         table_cells = entities_to_table_cells(entities)
                         rows = reconstruct_rows(table_cells)
                     with timer.stage("postprocessing"):
                         invoice = entities_to_invoice(
-                            page.page_index + 1,
+                            oriented_page.page_index + 1,
                             entities,
                             workflow_defaults=defaults,
                         )
@@ -511,6 +539,14 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                 predictions[document.document_id] = payload
                 prediction_path = predictions_dir / prediction_relative_path(document.relative_path)
                 _write_object(prediction_path, payload)
+                LOGGER.info(
+                    "[%d/%d] Completed %s: pages=%d entities=%d",
+                    document_index,
+                    total_documents,
+                    document.relative_path,
+                    len(invoices),
+                    document_entities,
+                )
             except Exception as exc:
                 failed += 1
                 error = DocumentError(
@@ -522,6 +558,14 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                     recoverable=True,
                 )
                 errors.append(error.model_dump(mode="json"))
+                LOGGER.error(
+                    "[%d/%d] Failed %s: %s: %s",
+                    document_index,
+                    total_documents,
+                    document.relative_path,
+                    type(exc).__name__,
+                    exc,
+                )
     with timer.stage("evaluation"):
         # Canonical GT values are first loaded only after every test prediction is finalized.
         for document in documents:
@@ -560,7 +604,7 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
     schema_path = Path(__file__).resolve().parents[3] / "configs/schema/invoice.schema.json"
     preprocessing = {
         "renderer": "invoice_ocr.io.pdf_render",
-        "orientation": "exif",
+        "orientation": "exif+pretrained_ocr_auto_90_270",
         "deskew": "configured_runtime",
     }
     postprocessing = {"canonical": "v1", "validation_tolerance": request.validation_tolerance}
