@@ -57,6 +57,7 @@ from invoice_ocr.postprocessing.fields import (
     load_workflow_defaults,
 )
 from invoice_ocr.postprocessing.validation import validate_invoice
+from invoice_ocr.preprocessing.layout import prepare_layout_regions
 from invoice_ocr.reconstruction.medicine_rows import (
     reconstruct_medicine_item,
     reconstruct_rows,
@@ -485,7 +486,9 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
     first_page = next(iter(rendered.values()))[0]
     for _ in range(request.warmup_iterations):
         warm_detections = detector.detect(first_page)
-        warm_recognitions = recognizer.recognize(first_page, warm_detections)
+        warm_recognitions = prepare_layout_regions(
+            recognizer.recognize(first_page, warm_detections)
+        )
         layout.extract(first_page, warm_recognitions)
     predictions: dict[str, dict[str, Any]] = {}
     expected: dict[str, dict[str, Any]] = {}
@@ -504,6 +507,7 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
             try:
                 invoices = []
                 document_entities = 0
+                document_regions = 0
                 for page in rendered[document.document_id]:
                     with timer.stage("detection"):
                         oriented_page, detections = auto_orient_page(
@@ -512,7 +516,10 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                             recognizer,
                         )
                     with timer.stage("recognition"):
-                        recognitions = recognizer.recognize(oriented_page, detections)
+                        recognitions = prepare_layout_regions(
+                            recognizer.recognize(oriented_page, detections)
+                        )
+                        document_regions += len(recognitions)
                     with timer.stage("layout_inference"):
                         entities, _relations = layout.extract(oriented_page, recognitions)
                         document_entities += len(entities)
@@ -540,11 +547,12 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
                 prediction_path = predictions_dir / prediction_relative_path(document.relative_path)
                 _write_object(prediction_path, payload)
                 LOGGER.info(
-                    "[%d/%d] Completed %s: pages=%d entities=%d",
+                    "[%d/%d] Completed %s: pages=%d regions=%d entities=%d",
                     document_index,
                     total_documents,
                     document.relative_path,
                     len(invoices),
+                    document_regions,
                     document_entities,
                 )
             except Exception as exc:
@@ -605,6 +613,7 @@ def evaluate_pipeline(request: PipelineEvaluationRequest) -> Path:
     preprocessing = {
         "renderer": "invoice_ocr.io.pdf_render",
         "orientation": "exif+pretrained_ocr_auto_90_270",
+        "layout_regions": "nonempty_page_y_x_region_id_v1",
         "deskew": "configured_runtime",
     }
     postprocessing = {"canonical": "v1", "validation_tolerance": request.validation_tolerance}

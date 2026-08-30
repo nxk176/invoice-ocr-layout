@@ -15,6 +15,7 @@ from invoice_ocr.contracts import (
     Relation,
 )
 from invoice_ocr.exceptions import CheckpointUnavailableError, DependencyUnavailableError
+from invoice_ocr.preprocessing.layout import prepare_layout_regions
 
 
 class LayoutLMv3Adapter(LayoutAdapter):
@@ -63,6 +64,7 @@ class LayoutLMv3Adapter(LayoutAdapter):
     def extract(
         self, page: DocumentPage, regions: list[RecognizedRegion]
     ) -> tuple[list[LabeledEntity], list[Relation]]:
+        regions = prepare_layout_regions(regions)
         torch, processor, model = self._load()
         normalized = [region.bbox.normalize(page.width, page.height) for region in regions]
         boxes = [

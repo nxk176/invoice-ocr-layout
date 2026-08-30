@@ -43,6 +43,7 @@ from invoice_ocr.layout_gt.index import (
 )
 from invoice_ocr.layout_gt.orientation import auto_orient_page
 from invoice_ocr.pipeline import resolve_device
+from invoice_ocr.preprocessing.layout import prepare_layout_regions
 from invoice_ocr.training.datasets import validate_ground_truth
 
 Renderer = Callable[[SourceDocument, Path], list[DocumentPage]]
@@ -163,10 +164,7 @@ def _ocr_regions(
                 recognition_confidence=region.confidence,
             )
         )
-    return sorted(
-        result,
-        key=lambda region: (region.page_index, region.bbox.y_min, region.bbox.x_min),
-    )
+    return prepare_layout_regions(result)
 
 
 def _relative_image_path(page: DocumentPage, output_dir: Path) -> str:
